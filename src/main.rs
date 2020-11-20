@@ -651,13 +651,13 @@ const SRC_SIZE: usize = 32;
 const SIG_SIZE: usize = 256;
 const ID_SIZE: usize = 8;
 
-
-
-fn main() {
-    let plaintext = b"Hellooooo";
+fn time_traceback(length: usize, iters: u64) {
+    //let plaintext = b"Hellooooo";
     let mut rng = OsRng::new().unwrap();
     let plat = Platform::new();
     let (mut alice, mut bob) = User::new(&mut rng);
+    let mut plaintext = vec![0; length]; 
+        rng.fill_bytes(&mut plaintext);
 
     let mut auth_sum = 0;
     let mut proc_sum = 0;
@@ -668,12 +668,10 @@ fn main() {
     let mut total_auth_sum = 0;
     let mut total_fwd_sum = 0;
 
-    let num_iter = 1000;
-
-    for _ in 1..num_iter {
+    for _ in 1..iters {
         //author
         let mut start = Instant::now();
-        let (comm, e) = alice.author(plaintext, &mut rng);
+        let (comm, e) = alice.author(&plaintext, &mut rng);
         let duration_send = start.elapsed();
         
         //process
@@ -693,7 +691,7 @@ fn main() {
 
         //fwd
         start = Instant::now();
-        let (comm, e) = bob.fwd(plaintext, fd, &mut rng);
+        let (comm, e) = bob.fwd(&plaintext, fd, &mut rng);
         let duration_fwd = start.elapsed();
 
         let (sig, src) = plat.process_send(&bob.userid, &comm);
@@ -705,14 +703,14 @@ fn main() {
 
         //total time for author
         start = Instant::now();
-        let (comm, e) = alice.author(plaintext, &mut rng);
+        let (comm, e) = alice.author(&plaintext, &mut rng);
         let (sig, src) = plat.process_send(&alice.userid, &comm);
         let (_, fd) = bob.receive((sig, src, e), &plat);
         let duration_total_auth = start.elapsed();
 
         //total time for forward
         start = Instant::now();
-        let (comm, e) = bob.fwd(plaintext, fd, &mut rng);
+        let (comm, e) = bob.fwd(&plaintext, fd, &mut rng);
         let (sig, src) = plat.process_send(&bob.userid, &comm);
         alice.receive((sig, src, e), &plat);
         let duration_total_fwd = start.elapsed();
@@ -728,14 +726,15 @@ fn main() {
         total_fwd_sum = total_fwd_sum + duration_total_fwd.as_nanos();
     }
 
-    let auth_avg = auth_sum as f64/(num_iter as f64 * 1000000.0);
-    let proc_avg = proc_sum as f64/(num_iter as f64 * 1000000.0);
-    let rec_avg = rec_sum as f64/(num_iter as f64 * 1000000.0);
-    let fwd_avg = fwd_sum as f64/(num_iter as f64 * 1000000.0);
-    let rec_fwd_avg = rec_fwd_sum as f64/(num_iter as f64 * 1000000.0);
-    let rep_avg = rep_sum as f64/(num_iter as f64 * 1000000.0);
-    let total_auth_avg = total_auth_sum as f64/(num_iter as f64 * 1000000.0);
-    let total_fwd_avg = total_fwd_sum as f64/(num_iter as f64 * 1000000.0);
+    let denom = iters as f64 * 1000000.0;
+    let auth_avg = auth_sum as f64/denom;
+    let proc_avg = proc_sum as f64/denom;
+    let rec_avg = rec_sum as f64/denom;
+    let fwd_avg = fwd_sum as f64/denom;
+    let rec_fwd_avg = rec_fwd_sum as f64/denom;
+    let rep_avg = rep_sum as f64/denom;
+    let total_auth_avg = total_auth_sum as f64/denom;
+    let total_fwd_avg = total_fwd_sum as f64/denom;
     
     println!("------------------- TRACEBACK STATS -----------------------");
     println!("Authoring a message: {:}ms", auth_avg);
@@ -751,14 +750,22 @@ fn main() {
     println!("Total time for an authored message: {:}", total_auth_avg);
     println!("Total time for a forwarded message: {:}", total_fwd_avg);
     println!();
+}
+
+fn time_no_trace(length: usize, iters: u64) {
+    //let plaintext = b"Hellooooo";
+    let mut rng = OsRng::new().unwrap();
+    let (mut alice, mut bob) = User::new(&mut rng);
+    let mut plaintext = vec![0; length]; 
+        rng.fill_bytes(&mut plaintext);
 
     let mut send_sum_wo_trace = 0;
     let mut rec_sum_wo_trace = 0;
     let mut total_sum_wo_trace = 0;
 
-    for _ in 1..num_iter {
+    for _ in 1..iters {
         let mut start = Instant::now();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(plaintext, AD, &mut rng);
+        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext, AD, &mut rng);
         let duration_send = start.elapsed();
     
         start = Instant::now();
@@ -766,7 +773,7 @@ fn main() {
         let duration_rec = start.elapsed();
 
         start = Instant::now();
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(plaintext, AD, &mut rng);
+        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext, AD, &mut rng);
         alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
         let duration_total = start.elapsed();
 
@@ -775,15 +782,20 @@ fn main() {
         total_sum_wo_trace = total_sum_wo_trace + duration_total.as_nanos();
     }
 
-    let avg_send = send_sum_wo_trace as f64/(num_iter as f64 * 1000000.0);
-    let avg_rec = rec_sum_wo_trace as f64/(num_iter as f64 * 1000000.0);
-    let avg_total = total_sum_wo_trace as f64/(num_iter as f64 * 1000000.0);
+    let avg_send = send_sum_wo_trace as f64/(iters as f64 * 1000000.0);
+    let avg_rec = rec_sum_wo_trace as f64/(iters as f64 * 1000000.0);
+    let avg_total = total_sum_wo_trace as f64/(iters as f64 * 1000000.0);
 
     println!("------------------- STATS WITHOUT TRACEBACK -----------------------");
     println!("Sending a message: {:}", avg_send);
     println!("Receiving a message: {:}", avg_rec);
     println!();
     println!("Total time: {:}", avg_total);
+}
+
+fn main() {
+   time_traceback(10, 1000);
+   time_no_trace(10, 1000);
     
 }
 
