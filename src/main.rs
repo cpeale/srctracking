@@ -742,18 +742,17 @@ fn time_traceback(length: usize, iters: u64) {
     println!();
     println!("Processing a message: {:}ms", proc_avg);
     println!();
-    println!("Receiving an authored message: {:}", rec_avg);
-    println!("Receiving a forwarded message: {:}", rec_fwd_avg);
+    println!("Receiving an authored message: {:}ms", rec_avg);
+    println!("Receiving a forwarded message: {:}ms", rec_fwd_avg);
     println!();
-    println!("Reporting a message: {:}", rep_avg);
+    println!("Reporting a message: {:}ms", rep_avg);
     println!();
-    println!("Total time for an authored message: {:}", total_auth_avg);
-    println!("Total time for a forwarded message: {:}", total_fwd_avg);
+    println!("Total time for an authored message: {:}ms", total_auth_avg);
+    println!("Total time for a forwarded message: {:}ms", total_fwd_avg);
     println!();
 }
 
 fn time_no_trace(length: usize, iters: u64) {
-    //let plaintext = b"Hellooooo";
     let mut rng = OsRng::new().unwrap();
     let (mut alice, mut bob) = User::new(&mut rng);
     let mut plaintext = vec![0; length]; 
@@ -787,15 +786,41 @@ fn time_no_trace(length: usize, iters: u64) {
     let avg_total = total_sum_wo_trace as f64/(iters as f64 * 1000000.0);
 
     println!("------------------- STATS WITHOUT TRACEBACK -----------------------");
-    println!("Sending a message: {:}", avg_send);
-    println!("Receiving a message: {:}", avg_rec);
+    println!("Sending a message: {:}ms", avg_send);
+    println!("Receiving a message: {:}ms", avg_rec);
     println!();
-    println!("Total time: {:}", avg_total);
+    println!("Total time: {:}ms", avg_total);
 }
 
 fn main() {
+   println!("Testing on a short message (10 bytes)");
+   println!();
    time_traceback(10, 1000);
    time_no_trace(10, 1000);
+
+   println!();
+   println!("Testing on a medium-short message (32 bytes)");
+   println!();
+   time_traceback(32, 1000);
+   time_no_trace(32, 1000);
+
+   println!();
+   println!("Testing on a medium message (140 bytes)");
+   println!();
+   time_traceback(140, 1000);
+   time_no_trace(140, 1000);
+
+   println!();
+   println!("Testing on a long message (300 bytes)");
+   println!();
+   time_traceback(300, 1000);
+   time_no_trace(300, 1000);
+
+   println!();
+   println!("Testing on a very long message (500 bytes)");
+   println!();
+   time_traceback(500, 1000);
+   time_no_trace(500, 1000);
     
 }
 
