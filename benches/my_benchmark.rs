@@ -1,16 +1,15 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+/*use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-fn fibonacci(n: u64) -> u64 {
-    match n {
-        0 => 1,
-        1 => 1,
-        n => fibonacci(n-1) + fibonacci(n-2),
-    }
-}
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("fib 20", |b| b.iter(|| fibonacci(black_box(20))));
+    let mut rng = OsRng::new().unwrap();
+    let plat = Platform::new();
+    let (mut alice, mut bob) = User::new(&mut rng);
+    let mut plaintext = vec![0; 40];
+    rng.fill_bytes(&mut plaintext);
+
+    c.bench_function("author", |b| b.iter(|| alice.author(&plaintext, &mut rng)));
 }
 
 criterion_group!(benches, criterion_benchmark);
-criterion_main!(benches);
+criterion_main!(benches);*/

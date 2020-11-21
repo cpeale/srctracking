@@ -1,21 +1,19 @@
-
 use aes::{block_cipher_trait::BlockCipher, Aes256};
 use block_modes::{block_padding::Pkcs7, BlockMode, Cbc};
 use clear_on_drop::clear::Clear;
-use double_ratchet::{self as dr, Header, KeyPair as _};
+use double_ratchet::{self as dr, KeyPair as _};
 use generic_array::{typenum::U32, GenericArray};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use rand_core::{CryptoRng, RngCore};
 use rand_os::OsRng;
-use sha2::{Digest, Sha256};
+use sha2::{Sha256};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use subtle::ConstantTimeEq;
 use x25519_dalek::{self, SharedSecret};
 
 pub type SignalDR = dr::DoubleRatchet<SignalCryptoProvider>;
-pub type HmacSha256 = Hmac<Sha256>;
 
 pub struct SignalCryptoProvider;
 
@@ -198,3 +196,97 @@ impl Drop for SymmetricKey {
     }
 }
 
+pub const AD:&[u8] = b"ad";
+
+pub fn pair_setup() -> (SignalDR, SignalDR) {
+    let mut rng = OsRng::new().unwrap();
+
+    // Copy some values (these are usually the outcome of an X3DH key exchange)
+    let bobs_prekey = KeyPair::new(&mut rng);
+    let bobs_public_prekey = bobs_prekey.public().clone();
+    let shared = SymmetricKey(GenericArray::<u8, U32>::clone_from_slice(
+        b"Output of a X3DH key exchange...",
+    ));
+
+    // Alice fetches Bob's prekey bundle and completes her side of the X3DH handshake
+    let mut alice = SignalDR::new_alice(&shared, bobs_public_prekey, None, &mut rng);
+    // Alice creates her first message to Bob
+    let pt_a_0 = b"Hello Bob";
+    let (h_a_0, ct_a_0) = alice.ratchet_encrypt(pt_a_0, AD, &mut rng);
+    // Alice creates an initial message containing `h_a_0`, `ct_a_0` and other X3DH information
+
+    // Bob receives the message and finishes his side of the X3DH handshake
+    let mut bob = SignalDR::new_bob(shared, bobs_prekey, None);
+    // Bob can now decrypt the initial message
+    assert_eq!(
+        Ok(Vec::from(&b"Hello Bob"[..])),
+        bob.ratchet_decrypt(&h_a_0, &ct_a_0, AD)
+    );
+    // Bob is now fully initialized: both sides can send and receive message
+    return (alice, bob);
+}
+
+#[test]
+fn signal_session() {
+    let mut rng = OsRng::new().unwrap();
+    let (ad_a, ad_b) = (b"A2B:SessionID=42", b"B2A:SessionID=42");
+
+    // Copy some values (these are usually the outcome of an X3DH key exchange)
+    let bobs_prekey = KeyPair::new(&mut rng);
+    let bobs_public_prekey = bobs_prekey.public().clone();
+    let shared = SymmetricKey(GenericArray::<u8, U32>::clone_from_slice(
+        b"Output of a X3DH key exchange...",
+    ));
+
+    // Alice fetches Bob's prekey bundle and completes her side of the X3DH handshake
+    let mut alice = SignalDR::new_alice(&shared, bobs_public_prekey, None, &mut rng);
+    // Alice creates her first message to Bob
+    let pt_a_0 = b"Hello Bob";
+    let (h_a_0, ct_a_0) = alice.ratchet_encrypt(pt_a_0, ad_a, &mut rng);
+    // Alice creates an initial message containing `h_a_0`, `ct_a_0` and other X3DH information
+
+    // Bob receives the message and finishes his side of the X3DH handshake
+    let mut bob = SignalDR::new_bob(shared, bobs_prekey, None);
+    // Bob can now decrypt the initial message
+    assert_eq!(
+        Ok(Vec::from(&b"Hello Bob"[..])),
+        bob.ratchet_decrypt(&h_a_0, &ct_a_0, ad_a)
+    );
+    // Bob is now fully initialized: both sides can send and receive message
+
+    let pt_a_1 = b"I will send this later";
+    let (h_a_1, ct_a_1) = alice.ratchet_encrypt(pt_a_1, ad_a, &mut rng);
+    let pt_b_0 = b"My first reply";
+    let (h_b_0, ct_b_0) = bob.ratchet_encrypt(pt_b_0, ad_b, &mut rng);
+    assert_eq!(
+        Ok(Vec::from(&pt_b_0[..])),
+        alice.ratchet_decrypt(&h_b_0, &ct_b_0, ad_b)
+    );
+    let pt_a_2 = b"What a boring conversation";
+    let (h_a_2, _ct_a_2) = alice.ratchet_encrypt(pt_a_2, ad_a, &mut rng);
+    let pt_a_3 = b"Don't you agree?";
+    let (h_a_3, ct_a_3) = alice.ratchet_encrypt(pt_a_3, ad_a, &mut rng);
+    assert_eq!(
+        Ok(Vec::from(&pt_a_3[..])),
+        bob.ratchet_decrypt(&h_a_3, &ct_a_3, ad_a)
+    );
+
+    let pt_b_1 = b"Agree with what?";
+    let (h_b_1, ct_b_1) = bob.ratchet_encrypt(pt_b_1, ad_b, &mut rng);
+    assert_eq!(
+        Ok(Vec::from(&pt_b_1[..])),
+        alice.ratchet_decrypt(&h_b_1, &ct_b_1, ad_b)
+    );
+
+    assert_eq!(
+        Ok(Vec::from(&pt_a_1[..])),
+        bob.ratchet_decrypt(&h_a_1, &ct_a_1, ad_a)
+    );
+
+    // No resending (that key is already deleted)
+    assert!(bob.ratchet_decrypt(&h_a_1, &ct_a_1, ad_a).is_err());
+    // No fake messages
+    assert!(bob
+        .ratchet_decrypt(&h_a_2, b"Incorrect ciphertext", ad_a)
+        .is_err());
+}
