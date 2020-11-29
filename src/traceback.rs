@@ -153,6 +153,9 @@ impl User {
         plaintext: &[u8],
         rng: &mut R,
     ) -> (Vec<u8>, (Header<PublicKey>, Vec<u8>)) {
+        //println!("{:?}",plaintext.to_vec());
+
+
         let (rnd, hash) = make_comm(plaintext, rng);
         //make message:
         //should be: FD_BOT, hash, rnd, message
@@ -194,6 +197,7 @@ impl User {
 
         if fd == FD_BOT {
             //println!("Received an authored message.");
+            //println!("{:?}", msg);
             //println!("Contents: {:?}", String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8"));
             (
                 msg.to_vec(),
@@ -201,6 +205,7 @@ impl User {
             )
         } else {
             //println!("Received a forward.");
+            //println!("{:?}", msg);
             //println!("Contents: {:?}", String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8"));
             let (f_sig, rest3) = fd.split_at(SIG_SIZE);
             let (f_src, rest4) = rest3.split_at(SRC_SIZE);
