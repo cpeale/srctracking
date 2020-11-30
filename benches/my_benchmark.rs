@@ -213,7 +213,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("process message (traceback)");
     for size in sizes.iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+        group.bench_with_input(BenchmarkId::new("with md", size), size, |b, &size| {
             b.iter_batched(|| {
                 //setup
                 let mut rng = OsRng::new().unwrap();
@@ -229,6 +229,111 @@ fn criterion_benchmark(c: &mut Criterion) {
             , 
             |(bob, comm)| {
                 let (sig, src) = plat.process_send(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        group.bench_with_input(BenchmarkId::new("no md", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_wo_md(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        group.bench_with_input(BenchmarkId::new("no src", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_wo_tag(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        group.bench_with_input(BenchmarkId::new("no sig", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_wo_sig(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        group.bench_with_input(BenchmarkId::new("sig with sha 512", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_sha_512(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        group.bench_with_input(BenchmarkId::new("sig with sha 384", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_sha_384(&bob.userid, &comm);
             },
             BatchSize::SmallInput
         );
