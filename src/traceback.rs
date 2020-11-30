@@ -90,7 +90,6 @@ impl<'a> Platform<'a> {
 
     //decrypt src + md
     pub fn extract_src(&self, src: &[u8]) -> Vec<u8> {
-        //TODO: add metadata
         decrypt(self.symm_cipher, self.symm_key, Some(self.symm_nonce), &src).unwrap()
     }
 

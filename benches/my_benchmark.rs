@@ -3,105 +3,263 @@ use double_ratchet_imp::d_ratchet::*;
 use rand_os::OsRng;
 use rand_core::RngCore;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
 
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut rng = OsRng::new().unwrap();
+
+    let sizes = [10, 100, 200, 500, 800, 1000, 2000, 5000, 8000];
     let plat = Platform::new();
-    let (mut alice, mut bob) = User::new(&mut rng);
-    let mut plaintext1 = vec![0; 10];
-    let mut plaintext2 = vec![0; 100];
-    let mut plaintext3 = vec![0; 500];
-    let mut plaintext4 = vec![0; 1000];
-    let mut plaintext5 = vec![0; 5000];
-    //println!("{:?}", plaintext);
-    rng.fill_bytes(&mut plaintext1);
-    rng.fill_bytes(&mut plaintext2);
-    rng.fill_bytes(&mut plaintext3);
-    rng.fill_bytes(&mut plaintext4);
-    rng.fill_bytes(&mut plaintext5);
 
-    //c.bench_function("author", |b| b.iter(|| alice.author(&plaintext, &mut rng)));
-    c.bench_function("total trace author and fwd 10", |b| b.iter(|| {
-        let (comm, e) = alice.author(&plaintext1, &mut rng);
-        let (sig, src) = plat.process_send(&alice.userid, &comm);
-        let (_, fd) = bob.receive((sig, src, e), &plat);
-        let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
-        let (sig, src) = plat.process_send(&bob.userid, &comm);
-        alice.receive((sig, src, e), &plat);
-    }));
+    let mut group = c.benchmark_group("send and receive");
+    for size in sizes.iter() {
+        group.bench_with_input(BenchmarkId::new("author with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                (bob, alice, plaintext1, rng)
+            }
+            , 
+            |(mut bob, mut alice, plaintext1, mut rng)| {
+            let (comm, e) = bob.author(&plaintext1, &mut rng);
+            let (sig, src) = plat.process_send(&bob.userid, &comm);
+            alice.receive((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total no trace exchange 10", |b| b.iter(|| {
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
-        alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
-        bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-    }));
+        group.bench_with_input(BenchmarkId::new("forward with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                (fd, bob, alice, plaintext1, rng)
+            }
+            , 
+            |(fd, mut bob, mut alice, plaintext1, mut rng)| {
+            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            let (sig, src) = plat.process_send(&bob.userid, &comm);
+            alice.receive((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total trace author and fwd 100", |b| b.iter(|| {
-        let (comm, e) = alice.author(&plaintext2, &mut rng);
-        let (sig, src) = plat.process_send(&alice.userid, &comm);
-        let (_, fd) = bob.receive((sig, src, e), &plat);
-        let (comm, e) = bob.fwd(&plaintext2, fd, &mut rng);
-        let (sig, src) = plat.process_send(&bob.userid, &comm);
-        alice.receive((sig, src, e), &plat);
-    }));
+        group.bench_with_input(BenchmarkId::new("no traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+                (bob, alice, plaintext1, rng)
+            }
+            , 
+            |(mut bob, mut alice, plaintext1, mut rng)| {
+                let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
 
-    c.bench_function("total no trace exchange 100", |b| b.iter(|| {
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext2, AD, &mut rng);
-        alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext2, AD, &mut rng);
-        bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-    }));
+    let mut group = c.benchmark_group("send only");
+    for size in sizes.iter() {
+        //group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::new("author with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                (bob, plaintext1, rng)
+            }
+            , 
+            |(mut bob, plaintext1, mut rng)| {
+            let (comm, e) = bob.author(&plaintext1, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total trace author and fwd 500", |b| b.iter(|| {
-        let (comm, e) = alice.author(&plaintext3, &mut rng);
-        let (sig, src) = plat.process_send(&alice.userid, &comm);
-        let (_, fd) = bob.receive((sig, src, e), &plat);
-        let (comm, e) = bob.fwd(&plaintext3, fd, &mut rng);
-        let (sig, src) = plat.process_send(&bob.userid, &comm);
-        alice.receive((sig, src, e), &plat);
-    }));
+        group.bench_with_input(BenchmarkId::new("forward with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                (fd, bob, plaintext1, rng)
+            }
+            , 
+            |(fd, mut bob, plaintext1, mut rng)| {
+            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total no trace exchange 500", |b| b.iter(|| {
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext3, AD, &mut rng);
-        alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext3, AD, &mut rng);
-        bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-    }));
+        group.bench_with_input(BenchmarkId::new("no traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+                (alice, plaintext1, rng)
+            }
+            , 
+            |(mut alice, plaintext1, mut rng)| {
+                let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
 
-    c.bench_function("total trace author and fwd 1000", |b| b.iter(|| {
-        let (comm, e) = alice.author(&plaintext4, &mut rng);
-        let (sig, src) = plat.process_send(&alice.userid, &comm);
-        let (_, fd) = bob.receive((sig, src, e), &plat);
-        let (comm, e) = bob.fwd(&plaintext4, fd, &mut rng);
-        let (sig, src) = plat.process_send(&bob.userid, &comm);
-        alice.receive((sig, src, e), &plat);
-    }));
+    let mut group = c.benchmark_group("receive only");
+    for size in sizes.iter() {
+        group.bench_with_input(BenchmarkId::new("author with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&bob.userid, &comm);
+                (alice, sig, src, e)
+            }
+            , 
+            |(mut alice, sig, src, e)| {
+            alice.receive((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total no trace exchange 1000", |b| b.iter(|| {
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext4, AD, &mut rng);
-        alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext4, AD, &mut rng);
-        bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-    }));
+        group.bench_with_input(BenchmarkId::new("forward with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+                let (sig, src) = plat.process_send(&bob.userid, &comm);
+                (alice, sig, src, e)
+            }
+            , 
+            |(mut alice, sig, src, e)| {
+            alice.receive((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
 
-    c.bench_function("total trace author and fwd 5000", |b| b.iter(|| {
-        let (comm, e) = alice.author(&plaintext5, &mut rng);
-        let (sig, src) = plat.process_send(&alice.userid, &comm);
-        let (_, fd) = bob.receive((sig, src, e), &plat);
-        let (comm, e) = bob.fwd(&plaintext5, fd, &mut rng);
-        let (sig, src) = plat.process_send(&bob.userid, &comm);
-        alice.receive((sig, src, e), &plat);
-    }));
+        group.bench_with_input(BenchmarkId::new("no traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+                let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                (bob, h, ct)
+            }
+            , 
+            |(mut bob, h, ct)| {
+                bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
 
-    c.bench_function("total no trace exchange 5000", |b| b.iter(|| {
-        let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext5, AD, &mut rng);
-        alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext5, AD, &mut rng);
-        bob.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-    }));
+    let mut group = c.benchmark_group("process message (traceback)");
+    for size in sizes.iter() {
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("report message (traceback)");
+    for size in sizes.iter() {
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                (plaintext1.to_vec(), fd.to_vec())
+            }
+            , 
+            |(plaintext1, fd)| {
+                plat.process_report(plaintext1, fd);
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
