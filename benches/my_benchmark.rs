@@ -338,6 +338,27 @@ fn criterion_benchmark(c: &mut Criterion) {
             BatchSize::SmallInput
         );
         });
+
+        group.bench_with_input(BenchmarkId::new("sig with ed", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
     }
     group.finish();
 
@@ -359,6 +380,188 @@ fn criterion_benchmark(c: &mut Criterion) {
             , 
             |(plaintext1, fd)| {
                 plat.process_report(plaintext1, fd);
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("traceback with ed signature speedup");
+    for size in sizes.iter() {
+        //author and receive
+        group.bench_with_input(BenchmarkId::new("author and receive", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                (bob, alice, plaintext1, rng)
+            }
+            , 
+            |(mut bob, mut alice, plaintext1, mut rng)| {
+            let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+            let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+            alice.receive_ed((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //forward and receive
+        group.bench_with_input(BenchmarkId::new("forward and receive", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                (fd, bob, alice, plaintext1, rng)
+            }
+            , 
+            |(fd, mut bob, mut alice, plaintext1, mut rng)| {
+            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+            alice.receive_ed((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //only author
+        group.bench_with_input(BenchmarkId::new("only author", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                (bob, plaintext1, rng)
+            }
+            , 
+            |(mut bob, plaintext1, mut rng)| {
+            let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //only forward
+        group.bench_with_input(BenchmarkId::new("only forward", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                (fd, bob, plaintext1, rng)
+            }
+            , 
+            |(fd, mut bob, plaintext1, mut rng)| {
+            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //only receive author
+        group.bench_with_input(BenchmarkId::new("receive authored", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+                (alice, sig, src, e)
+            }
+            , 
+            |(mut alice, sig, src, e)| {
+            alice.receive_ed((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //only receive forward
+        group.bench_with_input(BenchmarkId::new("receive forward", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+                (alice, sig, src, e)
+            }
+            , 
+            |(mut alice, sig, src, e)| {
+            alice.receive_ed((sig, src, e), &plat);
+            },
+            BatchSize::SmallInput
+        );
+        });
+        
+        //process send
+        group.bench_with_input(BenchmarkId::new("process send", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                (bob, comm)
+            }
+            , 
+            |(bob, comm)| {
+                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        //report
+        group.bench_with_input(BenchmarkId::new("report", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                (plaintext1.to_vec(), fd.to_vec())
+            }
+            , 
+            |(plaintext1, fd)| {
+                plat.process_report_ed(plaintext1, fd);
             },
             BatchSize::SmallInput
         );
