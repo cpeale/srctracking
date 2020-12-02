@@ -392,6 +392,7 @@ dependencies = [
  "chrono",
  "clear_on_drop",
  "criterion",
+ "curve25519-dalek 3.0.0",
  "double-ratchet",
  "ed25519-dalek",
  "generic-array 0.12.3",
