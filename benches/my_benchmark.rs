@@ -3,7 +3,7 @@ use double_ratchet_imp::d_ratchet::*;
 use rand_os::OsRng;
 use rand_core::RngCore;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
 
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -22,7 +22,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (_, _fd) = bob.receive((sig, src, e), &plat);
                 (bob, alice, plaintext1, rng)
             }
             , 
@@ -91,12 +91,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (_, _fd) = bob.receive((sig, src, e), &plat);
                 (bob, plaintext1, rng)
             }
             , 
             |(mut bob, plaintext1, mut rng)| {
-            let (comm, e) = bob.author(&plaintext1, &mut rng);
+            let (_comm, _e) = bob.author(&plaintext1, &mut rng);
             },
             BatchSize::SmallInput
         );
@@ -116,7 +116,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
             , 
             |(fd, mut bob, plaintext1, mut rng)| {
-            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            let (_comm, _e) = bob.fwd(&plaintext1, fd, &mut rng);
             },
             BatchSize::SmallInput
         );
@@ -135,7 +135,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
             , 
             |(mut alice, plaintext1, mut rng)| {
-                let (h, ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                let (_h, _ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
             },
             BatchSize::SmallInput
         );
@@ -154,7 +154,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
+                let (_, _fd) = bob.receive((sig, src, e), &plat);
                 let (comm, e) = bob.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&bob.userid, &comm);
                 (alice, sig, src, e)
@@ -222,118 +222,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                let (_, _fd) = bob.receive((sig, src, e), &plat);
+                let (comm, _e) = bob.author(&plaintext1, &mut rng);
                 (bob, comm)
             }
             , 
             |(bob, comm)| {
-                let (sig, src) = plat.process_send(&bob.userid, &comm);
-            },
-            BatchSize::SmallInput
-        );
-        });
-
-        group.bench_with_input(BenchmarkId::new("no md", size), size, |b, &size| {
-            b.iter_batched(|| {
-                //setup
-                let mut rng = OsRng::new().unwrap();
-                let (mut alice, mut bob) = User::new(&mut rng);
-                let mut plaintext1 = vec![0; size];
-                rng.fill_bytes(&mut plaintext1);
-                let (comm, e) = alice.author(&plaintext1, &mut rng);
-                let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
-                (bob, comm)
-            }
-            , 
-            |(bob, comm)| {
-                let (sig, src) = plat.process_send_wo_md(&bob.userid, &comm);
-            },
-            BatchSize::SmallInput
-        );
-        });
-
-        group.bench_with_input(BenchmarkId::new("no src", size), size, |b, &size| {
-            b.iter_batched(|| {
-                //setup
-                let mut rng = OsRng::new().unwrap();
-                let (mut alice, mut bob) = User::new(&mut rng);
-                let mut plaintext1 = vec![0; size];
-                rng.fill_bytes(&mut plaintext1);
-                let (comm, e) = alice.author(&plaintext1, &mut rng);
-                let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
-                (bob, comm)
-            }
-            , 
-            |(bob, comm)| {
-                let (sig, src) = plat.process_send_wo_tag(&bob.userid, &comm);
-            },
-            BatchSize::SmallInput
-        );
-        });
-
-        group.bench_with_input(BenchmarkId::new("no sig", size), size, |b, &size| {
-            b.iter_batched(|| {
-                //setup
-                let mut rng = OsRng::new().unwrap();
-                let (mut alice, mut bob) = User::new(&mut rng);
-                let mut plaintext1 = vec![0; size];
-                rng.fill_bytes(&mut plaintext1);
-                let (comm, e) = alice.author(&plaintext1, &mut rng);
-                let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
-                (bob, comm)
-            }
-            , 
-            |(bob, comm)| {
-                let (sig, src) = plat.process_send_wo_sig(&bob.userid, &comm);
-            },
-            BatchSize::SmallInput
-        );
-        });
-
-        group.bench_with_input(BenchmarkId::new("sig with sha 512", size), size, |b, &size| {
-            b.iter_batched(|| {
-                //setup
-                let mut rng = OsRng::new().unwrap();
-                let (mut alice, mut bob) = User::new(&mut rng);
-                let mut plaintext1 = vec![0; size];
-                rng.fill_bytes(&mut plaintext1);
-                let (comm, e) = alice.author(&plaintext1, &mut rng);
-                let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
-                (bob, comm)
-            }
-            , 
-            |(bob, comm)| {
-                let (sig, src) = plat.process_send_sha_512(&bob.userid, &comm);
-            },
-            BatchSize::SmallInput
-        );
-        });
-
-        group.bench_with_input(BenchmarkId::new("sig with sha 384", size), size, |b, &size| {
-            b.iter_batched(|| {
-                //setup
-                let mut rng = OsRng::new().unwrap();
-                let (mut alice, mut bob) = User::new(&mut rng);
-                let mut plaintext1 = vec![0; size];
-                rng.fill_bytes(&mut plaintext1);
-                let (comm, e) = alice.author(&plaintext1, &mut rng);
-                let (sig, src) = plat.process_send(&alice.userid, &comm);
-                let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
-                (bob, comm)
-            }
-            , 
-            |(bob, comm)| {
-                let (sig, src) = plat.process_send_sha_384(&bob.userid, &comm);
+                let (_sig, _src) = plat.process_send(&bob.userid, &comm);
             },
             BatchSize::SmallInput
         );
@@ -348,13 +243,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
-                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                let (_, _fd) = bob.receive_ed((sig, src, e));
+                let (comm, _e) = bob.author_ed(&plaintext1, &mut rng);
                 (bob, comm)
             }
             , 
             |(bob, comm)| {
-                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+                let (_sig, _src) = plat.process_send_ed(&bob.userid, &comm);
             },
             BatchSize::SmallInput
         );
@@ -374,7 +269,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let (comm, e) = alice.author(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send(&alice.userid, &comm);
                 let (_, fd) = bob.receive((sig, src, e), &plat);
-                let (comm, e) = bob.author(&plaintext1, &mut rng);
+                let (_comm, _e) = bob.author(&plaintext1, &mut rng);
                 (plaintext1.to_vec(), fd.to_vec())
             }
             , 
@@ -399,14 +294,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, _fd) = bob.receive_ed((sig, src, e));
                 (bob, alice, plaintext1, rng)
             }
             , 
             |(mut bob, mut alice, plaintext1, mut rng)| {
             let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
             let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
-            alice.receive_ed((sig, src, e), &plat);
+            alice.receive_ed((sig, src, e));
             },
             BatchSize::SmallInput
         );
@@ -422,14 +317,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, fd) = bob.receive_ed((sig, src, e));
                 (fd, bob, alice, plaintext1, rng)
             }
             , 
             |(fd, mut bob, mut alice, plaintext1, mut rng)| {
             let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
             let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
-            alice.receive_ed((sig, src, e), &plat);
+            alice.receive_ed((sig, src, e));
             },
             BatchSize::SmallInput
         );
@@ -445,12 +340,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, _fd) = bob.receive_ed((sig, src, e));
                 (bob, plaintext1, rng)
             }
             , 
             |(mut bob, plaintext1, mut rng)| {
-            let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+            let (_comm, _e) = bob.author_ed(&plaintext1, &mut rng);
             },
             BatchSize::SmallInput
         );
@@ -466,12 +361,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, fd) = bob.receive_ed((sig, src, e));
                 (fd, bob, plaintext1, rng)
             }
             , 
             |(fd, mut bob, plaintext1, mut rng)| {
-            let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
+            let (_comm, _e) = bob.fwd(&plaintext1, fd, &mut rng);
             },
             BatchSize::SmallInput
         );
@@ -487,14 +382,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, _fd) = bob.receive_ed((sig, src, e));
                 let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
                 (alice, sig, src, e)
             }
             , 
             |(mut alice, sig, src, e)| {
-            alice.receive_ed((sig, src, e), &plat);
+            alice.receive_ed((sig, src, e));
             },
             BatchSize::SmallInput
         );
@@ -510,14 +405,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
+                let (_, fd) = bob.receive_ed((sig, src, e));
                 let (comm, e) = bob.fwd(&plaintext1, fd, &mut rng);
                 let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
                 (alice, sig, src, e)
             }
             , 
             |(mut alice, sig, src, e)| {
-            alice.receive_ed((sig, src, e), &plat);
+            alice.receive_ed((sig, src, e));
             },
             BatchSize::SmallInput
         );
@@ -533,13 +428,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
-                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                let (_, _fd) = bob.receive_ed((sig, src, e));
+                let (comm, _e) = bob.author_ed(&plaintext1, &mut rng);
                 (bob, comm)
             }
             , 
             |(bob, comm)| {
-                let (sig, src) = plat.process_send_ed(&bob.userid, &comm);
+                let (_sig, _src) = plat.process_send_ed(&bob.userid, &comm);
             },
             BatchSize::SmallInput
         );
@@ -555,8 +450,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rng.fill_bytes(&mut plaintext1);
                 let (comm, e) = alice.author_ed(&plaintext1, &mut rng);
                 let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-                let (_, fd) = bob.receive_ed((sig, src, e), &plat);
-                let (comm, e) = bob.author_ed(&plaintext1, &mut rng);
+                let (_, fd) = bob.receive_ed((sig, src, e));
+                let (_comm, _e) = bob.author_ed(&plaintext1, &mut rng);
                 (plaintext1.to_vec(), fd.to_vec())
             }
             , 

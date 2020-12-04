@@ -1,26 +1,23 @@
 use chrono::offset::Utc;
 use chrono::DateTime;
 use double_ratchet::Header;
+use ed25519_dalek::{Keypair, PublicKey as Pk, Signature, Signer, Verifier};
 use openssl::hash::MessageDigest;
 use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
 use openssl::sign::{Signer as OtherSigner, Verifier as OtherVerifier};
 use openssl::symm::{decrypt, encrypt, Cipher};
+use rand::rngs::OsRng as OtherRng;
 use rand_core::{CryptoRng, RngCore};
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 use std::vec::Vec;
-use ed25519_dalek::{Keypair, Signature, Signer, Verifier, PublicKey as Pk};
-use rand::rngs::{OsRng as OtherRng};
-
-//for tests
-use rand_os::OsRng;
-use std::time::{Duration, UNIX_EPOCH};
 
 use crate::d_ratchet::*;
 
 const FD_BOT: &[u8] = &[0; 352]; //signature size + tag size () + comm size (32) + rnd size (32) //TODO: Make the right length
-const FD_BOT_ED: &[u8] = &[0; COMM_SIZE + RAND_SIZE + SRC_SIZE + ed25519_dalek::ed25519::SIGNATURE_LENGTH]; 
+const FD_BOT_ED: &[u8] =
+    &[0; COMM_SIZE + RAND_SIZE + SRC_SIZE + ed25519_dalek::ed25519::SIGNATURE_LENGTH];
 const FD_SIZE: usize = 352;
 const COMM_SIZE: usize = 32;
 const RAND_SIZE: usize = 32;
@@ -57,7 +54,7 @@ pub struct Platform<'a> {
 impl<'a> Platform<'a> {
     //constructor
     pub fn new() -> Platform<'a> {
-        let mut rng = OtherRng{};
+        let mut rng = OtherRng {};
         Platform {
             sigkeys: PKey::from_rsa(Rsa::generate(2048).unwrap()).unwrap(),
             symm_cipher: Cipher::aes_128_cbc(),
@@ -91,22 +88,6 @@ impl<'a> Platform<'a> {
         self.ed_sigkeys.sign(&tag).to_bytes().to_vec()
     }
 
-    //sign with sha_512
-    fn sign_512(&self, comm: &[u8], src: &[u8]) -> Vec<u8> {
-        let mut signer = OtherSigner::new(MessageDigest::sha512(), &self.sigkeys).unwrap();
-        signer.update(comm).unwrap();
-        signer.update(src).unwrap();
-        signer.sign_to_vec().unwrap()
-    }
-
-    //sign with sha_384
-    fn sign_384(&self, comm: &[u8], src: &[u8]) -> Vec<u8> {
-        let mut signer = OtherSigner::new(MessageDigest::sha384(), &self.sigkeys).unwrap();
-        signer.update(comm).unwrap();
-        signer.update(src).unwrap();
-        signer.sign_to_vec().unwrap()
-    }
-
     //check signature
     fn verify(&self, comm: &[u8], src: &[u8], signature: &[u8]) {
         let mut verifier = OtherVerifier::new(MessageDigest::sha256(), &self.sigkeys).unwrap();
@@ -120,7 +101,7 @@ impl<'a> Platform<'a> {
         let contents = [comm.to_vec(), src.to_vec()].concat();
         let mut fixedsig = [0; ed25519_dalek::ed25519::SIGNATURE_LENGTH];
         fixedsig.copy_from_slice(signature);
-        let insig = ed25519_dalek::Signature::new(fixedsig);
+        let insig = Signature::new(fixedsig);
         assert!(self.ed_sigkeys.verify(&contents, &insig).is_ok());
     }
 
@@ -133,17 +114,6 @@ impl<'a> Platform<'a> {
         let tag = [userid.to_vec(), md.to_ne_bytes().to_vec()].concat();
 
         encrypt(self.symm_cipher, self.symm_key, Some(self.symm_nonce), &tag).unwrap()
-    }
-
-    //encrypt src + md
-    fn make_tag_wo_md(&self, userid: &[u8]) -> Vec<u8> {
-        encrypt(
-            self.symm_cipher,
-            self.symm_key,
-            Some(self.symm_nonce),
-            userid,
-        )
-        .unwrap()
     }
 
     //decrypt src + md
@@ -162,37 +132,6 @@ impl<'a> Platform<'a> {
         let sig = self.sign_ed(comm, &src);
         (sig, src)
     }
-
-    pub fn process_send_wo_md(&self, id: &[u8], comm: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let src = self.make_tag_wo_md(id);
-        let sig = self.sign(comm, &src);
-        (sig, src)
-    }
-
-    pub fn process_send_wo_sig(&self, id: &[u8], comm: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let src = self.make_tag(id);
-        let sig = vec![0; SIG_SIZE];
-        (sig, src)
-    }
-
-    pub fn process_send_wo_tag(&self, id: &[u8], comm: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let src = vec![0; SRC_SIZE]; //DUMMY SRC
-        let sig = self.sign(comm, &src);
-        (sig, src)
-    }
-
-    pub fn process_send_sha_384(&self, id: &[u8], comm: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let src = self.make_tag(id);
-        let sig = self.sign_384(comm, &src);
-        (sig, src)
-    }
-
-    pub fn process_send_sha_512(&self, id: &[u8], comm: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let src = self.make_tag(id);
-        let sig = self.sign_512(comm, &src);
-        (sig, src)
-    }
-    
 
     pub fn process_report(&self, msg: Vec<u8>, fd: Vec<u8>) -> (u64, u64) {
         let (sig, rest3) = fd.split_at(SIG_SIZE);
@@ -293,7 +232,7 @@ impl User {
         let contents = [comm.to_vec(), src.to_vec()].concat();
         let mut fixedsig = [0; ed25519_dalek::ed25519::SIGNATURE_LENGTH];
         fixedsig.copy_from_slice(signature);
-        let insig = ed25519_dalek::Signature::new(fixedsig);
+        let insig = Signature::new(fixedsig);
         assert!(self.sig_pk.unwrap().verify(&contents, &insig).is_ok());
     }
 
@@ -385,11 +324,11 @@ impl User {
     pub fn receive_ed(
         &mut self,
         pd: (Vec<u8>, Vec<u8>, (Header<PublicKey>, Vec<u8>)),
-        plat: &Platform,
     ) -> (Vec<u8>, Vec<u8>) {
         let (sig, src, (h, ct)) = pd;
         let pt = self.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
-        let (fd, rest) = pt.split_at(ed25519_dalek::ed25519::SIGNATURE_LENGTH + SRC_SIZE + COMM_SIZE + RAND_SIZE);
+        let (fd, rest) = pt
+            .split_at(ed25519_dalek::ed25519::SIGNATURE_LENGTH + SRC_SIZE + COMM_SIZE + RAND_SIZE);
         let (comm, rest2) = rest.split_at(COMM_SIZE);
         let (rnd, msg) = rest2.split_at(RAND_SIZE);
 
@@ -424,222 +363,229 @@ impl User {
     }
 }
 
-#[test]
-fn basic_sha_tests() {
-    //checking basic hash creation without random opening.
-    let mut hasher = Sha256::new();
-    let message = b"message to commit";
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand_os::OsRng;
+    use std::time::{Duration, UNIX_EPOCH};
 
-    hasher.input(message);
-    let hash = hasher.result();
+    #[test]
+    fn basic_sha_tests() {
+        //checking basic hash creation without random opening.
+        let mut hasher = Sha256::new();
+        let message = b"message to commit";
 
-    let hash2 = Sha256::digest(message);
-    assert_eq!(hash, hash2);
+        hasher.input(message);
+        let hash = hasher.result();
 
-    let mut hasher3 = Sha256::new();
-    hasher3.input(b"diff message");
-    let hash3 = hasher3.result();
+        let hash2 = Sha256::digest(message);
+        assert_eq!(hash, hash2);
 
-    assert_ne!(hash, hash3);
+        let mut hasher3 = Sha256::new();
+        hasher3.input(b"diff message");
+        let hash3 = hasher3.result();
 
-    //check converting to array
-    let hash4 = Sha256::digest(message);
-    let h4: [u8; 32] = hash4.as_slice().try_into().expect("Wrong length");
-    let hash5 = Sha256::digest(message);
-    let h5: [u8; 32] = hash5.as_slice().try_into().expect("Wrong length");
-    assert_eq!(&h4[..], &h5[..]);
-}
+        assert_ne!(hash, hash3);
 
-#[test]
-fn basic_comm_test() {
-    let mut rng = OsRng::new().unwrap();
-    let msg = b"hello";
-    let (r, c) = make_comm(msg, &mut rng);
-    check_comm(msg, &r, c);
-}
+        //check converting to array
+        let hash4 = Sha256::digest(message);
+        let h4: [u8; 32] = hash4.as_slice().try_into().expect("Wrong length");
+        let hash5 = Sha256::digest(message);
+        let h5: [u8; 32] = hash5.as_slice().try_into().expect("Wrong length");
+        assert_eq!(&h4[..], &h5[..]);
+    }
 
-#[test]
-fn basic_sig_test() {
-    // Generate a keypair
-    let keypair = Rsa::generate(2048).unwrap();
-    let keypair = PKey::from_rsa(keypair).unwrap();
+    #[test]
+    fn basic_comm_test() {
+        let mut rng = OsRng::new().unwrap();
+        let msg = b"hello";
+        let (r, c) = make_comm(msg, &mut rng);
+        check_comm(msg, &r, c);
+    }
 
-    let data = b"hello, world!";
-    let data2 = b"hola, mundo!";
+    #[test]
+    fn basic_sig_test() {
+        // Generate a keypair
+        let keypair = Rsa::generate(2048).unwrap();
+        let keypair = PKey::from_rsa(keypair).unwrap();
 
-    // Sign the data
-    let mut signer = OtherSigner::new(MessageDigest::sha256(), &keypair).unwrap();
-    signer.update(data).unwrap();
-    signer.update(data2).unwrap();
-    let signature = signer.sign_to_vec().unwrap();
+        let data = b"hello, world!";
+        let data2 = b"hola, mundo!";
 
-    // Verify the data
-    let mut verifier = OtherVerifier::new(MessageDigest::sha256(), &keypair).unwrap();
-    verifier.update(data).unwrap();
-    verifier.update(data2).unwrap();
-    assert!(verifier.verify(&signature).unwrap());
-}
+        // Sign the data
+        let mut signer = OtherSigner::new(MessageDigest::sha256(), &keypair).unwrap();
+        signer.update(data).unwrap();
+        signer.update(data2).unwrap();
+        let signature = signer.sign_to_vec().unwrap();
 
-#[test]
-fn basic_ed_sig_test() {
-    let mut rng = OtherRng{};
-    let keypair = Keypair::generate(&mut rng);
-    let comm = vec![0; COMM_SIZE];
-    let src = vec![0; SRC_SIZE];
-    
-    let message = [comm.to_vec(), src.to_vec()].concat();
+        // Verify the data
+        let mut verifier = OtherVerifier::new(MessageDigest::sha256(), &keypair).unwrap();
+        verifier.update(data).unwrap();
+        verifier.update(data2).unwrap();
+        assert!(verifier.verify(&signature).unwrap());
+    }
 
-    let signature = keypair.sign(&message);
-    assert!(keypair.verify(&message, &signature).is_ok());
-    let public_key: Pk = keypair.public;
-    assert!(public_key.verify(&message, &signature).is_ok());
+    #[test]
+    fn basic_ed_sig_test() {
+        let mut rng = OtherRng {};
+        let keypair = Keypair::generate(&mut rng);
+        let comm = vec![0; COMM_SIZE];
+        let src = vec![0; SRC_SIZE];
 
-    //serialization test
-    let message = [comm.to_vec(), src.to_vec()].concat();
+        let message = [comm.to_vec(), src.to_vec()].concat();
 
-    let signature = keypair.sign(&message);
-    let encoded_signature: Vec<u8> = signature.to_bytes().to_vec();
-    let mut fixedsig = [0; ed25519_dalek::ed25519::SIGNATURE_LENGTH];
-    fixedsig.copy_from_slice(&encoded_signature[..]);
-    let decoded_signature: Signature = Signature::new(fixedsig);
+        let signature = keypair.sign(&message);
+        assert!(keypair.verify(&message, &signature).is_ok());
+        let public_key: Pk = keypair.public;
+        assert!(public_key.verify(&message, &signature).is_ok());
 
-    assert!(keypair.verify(&message, &decoded_signature).is_ok());
-}
+        //serialization test
+        let message = [comm.to_vec(), src.to_vec()].concat();
 
-#[test]
-fn basic_symm_key_test() {
-    let cipher = Cipher::aes_128_cbc();
-    let data = b"Crypto";
-    let key = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
-    let iv = b"\x00\x01\x02\x03\x04\x05\x06\x07\x00\x01\x02\x03\x04\x05\x06\x07";
-    let ciphertext = encrypt(cipher, key, Some(iv), data).unwrap();
+        let signature = keypair.sign(&message);
+        let encoded_signature: Vec<u8> = signature.to_bytes().to_vec();
+        let mut fixedsig = [0; ed25519_dalek::ed25519::SIGNATURE_LENGTH];
+        fixedsig.copy_from_slice(&encoded_signature[..]);
+        let decoded_signature: Signature = Signature::new(fixedsig);
 
-    let plaintext = decrypt(cipher, key, Some(iv), &ciphertext).unwrap();
+        assert!(keypair.verify(&message, &decoded_signature).is_ok());
+    }
 
-    assert_eq!(data, &plaintext[..]);
+    #[test]
+    fn basic_symm_key_test() {
+        let cipher = Cipher::aes_128_cbc();
+        let data = b"Crypto";
+        let key = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
+        let iv = b"\x00\x01\x02\x03\x04\x05\x06\x07\x00\x01\x02\x03\x04\x05\x06\x07";
+        let ciphertext = encrypt(cipher, key, Some(iv), data).unwrap();
 
-    let data2 = b"New Crypto";
-    let ciphertext2 = encrypt(cipher, key, Some(iv), data2).unwrap();
+        let plaintext = decrypt(cipher, key, Some(iv), &ciphertext).unwrap();
 
-    let plaintext2 = decrypt(cipher, key, Some(iv), &ciphertext2).unwrap();
+        assert_eq!(data, &plaintext[..]);
 
-    assert_eq!(data2, &plaintext2[..]);
-}
+        let data2 = b"New Crypto";
+        let ciphertext2 = encrypt(cipher, key, Some(iv), data2).unwrap();
 
-#[test]
-fn auth_test() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new(&mut rng);
-    //author message, from user
-    let (comm, e) = alice.author(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send(&alice.userid, &comm);
-    //receive message
-    bob.receive((sig, src, e), &plat);
-}
+        let plaintext2 = decrypt(cipher, key, Some(iv), &ciphertext2).unwrap();
 
-#[test]
-fn auth_test_ed() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
-    //author message, from user
-    let (comm, e) = alice.author_ed(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-    //receive message
-    bob.receive_ed((sig, src, e), &plat);
-}
+        assert_eq!(data2, &plaintext2[..]);
+    }
 
-#[test]
-fn fwd_test() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new(&mut rng);
-    //author message, from user
-    let (comm, e) = alice.author(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send(&alice.userid, &comm);
-    //receive message
-    let (_, fd) = bob.receive((sig, src, e), &plat);
-    //forward message, from bob
-    let (fcomm, fe) = bob.fwd(plaintext, fd, &mut rng);
-    //process message, from platform
-    let (fsig, fsrc) = plat.process_send(&bob.userid, &fcomm);
-    alice.receive((fsig, fsrc, fe), &plat);
-}
+    #[test]
+    fn auth_test() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new(&mut rng);
+        //author message, from user
+        let (comm, e) = alice.author(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send(&alice.userid, &comm);
+        //receive message
+        bob.receive((sig, src, e), &plat);
+    }
 
-#[test]
-fn fwd_test_ed() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
-    //author message, from user
-    let (comm, e) = alice.author_ed(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-    //receive message
-    let (_, fd) = bob.receive_ed((sig, src, e), &plat);
-    //forward message, from bob
-    let (fcomm, fe) = bob.fwd(plaintext, fd, &mut rng);
-    //process message, from platform
-    let (fsig, fsrc) = plat.process_send_ed(&bob.userid, &fcomm);
-    alice.receive_ed((fsig, fsrc, fe), &plat);
-}
+    #[test]
+    fn auth_test_ed() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+        //author message, from user
+        let (comm, e) = alice.author_ed(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+        //receive message
+        bob.receive_ed((sig, src, e));
+    }
 
-#[test]
-fn report_test() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new(&mut rng);
-    //author message, from user
-    let (comm, e) = alice.author(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send(&alice.userid, &comm);
-    //receive message
-    let (msg, fd) = bob.receive((sig, src, e), &plat);
-    //report message
-    let (id, stamp) = plat.process_report(msg.to_vec(), fd);
+    #[test]
+    fn fwd_test() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new(&mut rng);
+        //author message, from user
+        let (comm, e) = alice.author(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send(&alice.userid, &comm);
+        //receive message
+        let (_, fd) = bob.receive((sig, src, e), &plat);
+        //forward message, from bob
+        let (fcomm, fe) = bob.fwd(plaintext, fd, &mut rng);
+        //process message, from platform
+        let (fsig, fsrc) = plat.process_send(&bob.userid, &fcomm);
+        alice.receive((fsig, fsrc, fe), &plat);
+    }
 
-    let d = UNIX_EPOCH + Duration::from_secs(stamp);
-    let datetime = DateTime::<Utc>::from(d);
-    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string();
+    #[test]
+    fn fwd_test_ed() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+        //author message, from user
+        let (comm, e) = alice.author_ed(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+        //receive message
+        let (_, fd) = bob.receive_ed((sig, src, e));
+        //forward message, from bob
+        let (fcomm, fe) = bob.fwd(plaintext, fd, &mut rng);
+        //process message, from platform
+        let (fsig, fsrc) = plat.process_send_ed(&bob.userid, &fcomm);
+        alice.receive_ed((fsig, fsrc, fe));
+    }
 
-    println!(
-        "received valid report on the message {:?}",
-        String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8")
-    );
-    println!("Source user: {:?}, Send time: {}", id, timestamp_str);
-}
+    #[test]
+    fn report_test() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new(&mut rng);
+        //author message, from user
+        let (comm, e) = alice.author(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send(&alice.userid, &comm);
+        //receive message
+        let (msg, fd) = bob.receive((sig, src, e), &plat);
+        //report message
+        let (id, stamp) = plat.process_report(msg.to_vec(), fd);
 
-#[test]
-fn report_test_ed() {
-    let plaintext = b"Hellooooo";
-    let mut rng = OsRng::new().unwrap();
-    let plat = Platform::new();
-    let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
-    //author message, from user
-    let (comm, e) = alice.author_ed(plaintext, &mut rng);
-    //process message, from platform
-    let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
-    //receive message
-    let (msg, fd) = bob.receive_ed((sig, src, e), &plat);
-    //report message
-    let (id, stamp) = plat.process_report_ed(msg.to_vec(), fd);
+        let d = UNIX_EPOCH + Duration::from_secs(stamp);
+        let datetime = DateTime::<Utc>::from(d);
+        let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string();
 
-    let d = UNIX_EPOCH + Duration::from_secs(stamp);
-    let datetime = DateTime::<Utc>::from(d);
-    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string();
+        println!(
+            "received valid report on the message {:?}",
+            String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8")
+        );
+        println!("Source user: {:?}, Send time: {}", id, timestamp_str);
+    }
 
-    println!(
-        "received valid report on the message {:?}",
-        String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8")
-    );
-    println!("Source user: {:?}, Send time: {}", id, timestamp_str);
+    #[test]
+    fn report_test_ed() {
+        let plaintext = b"Hellooooo";
+        let mut rng = OsRng::new().unwrap();
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+        //author message, from user
+        let (comm, e) = alice.author_ed(plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+        //receive message
+        let (msg, fd) = bob.receive_ed((sig, src, e));
+        //report message
+        let (id, stamp) = plat.process_report_ed(msg.to_vec(), fd);
+
+        let d = UNIX_EPOCH + Duration::from_secs(stamp);
+        let datetime = DateTime::<Utc>::from(d);
+        let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string();
+
+        println!(
+            "received valid report on the message {:?}",
+            String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8")
+        );
+        println!("Source user: {:?}, Send time: {}", id, timestamp_str);
+    }
 }
