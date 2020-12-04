@@ -13,37 +13,37 @@ use rand::rngs::OsRng;
 pub struct AMAC {
     //public group params
     //order: G_V, G_w, G_w', G_x0, G_x1, G_y1, G_y2, G_y3, G_m
-    params: Vec<RistrettoPoint>,
-    g: RistrettoPoint, //TODO: will maybe remove later
+    pub params: Vec<RistrettoPoint>,
+    pub g: RistrettoPoint, //TODO: will maybe remove later
 
     //secret keys
     //order: w, w', x_0, x_1, y_1, y_2, y_3
-    secrets: Vec<Scalar>,
+    pub secrets: Vec<Scalar>,
 
     //issuance parameters
-    cw: RistrettoPoint,
-    i: RistrettoPoint,
+    pub cw: RistrettoPoint,
+    pub i: RistrettoPoint,
 }
 
 //param constants
-const G_V: usize = 0;
-const G_W: usize = 1;
-const G_W_P: usize = 2;
-const G_X0: usize = 3;
-const  G_X1: usize = 4;
-const G_Y1: usize = 5;
-const G_Y2: usize = 6;
-const G_Y3: usize = 7;
-const G_M: usize = 8;
+pub const G_V: usize = 0;
+pub const G_W: usize = 1;
+pub const G_W_P: usize = 2;
+pub const G_X0: usize = 3;
+pub const  G_X1: usize = 4;
+pub const G_Y1: usize = 5;
+pub const G_Y2: usize = 6;
+pub const G_Y3: usize = 7;
+pub const G_M: usize = 8;
 
 //secret constants
-const W: usize = 0;
-const W_P: usize = 1;
-const X_0: usize = 2;
-const X_1: usize = 3;
-const  Y_1: usize = 4;
-const Y_2: usize = 5;
-const Y_3: usize = 6;
+pub const W: usize = 0;
+pub const W_P: usize = 1;
+pub const X_0: usize = 2;
+pub const X_1: usize = 3;
+pub const  Y_1: usize = 4;
+pub const Y_2: usize = 5;
+pub const Y_3: usize = 6;
 
 
 impl AMAC {
@@ -81,7 +81,7 @@ impl AMAC {
     }
 
     //blind issuance
-    pub fn blind_issue(&self, mut rng: &mut OsRng, h: RistrettoPoint, a: (RistrettoPoint, RistrettoPoint), b: (RistrettoPoint, RistrettoPoint), c: (RistrettoPoint, RistrettoPoint)) -> (Scalar, RistrettoPoint, (RistrettoPoint, RistrettoPoint)) {
+    pub fn blind_issue(&self, mut rng: &mut OsRng, h: RistrettoPoint, a: (RistrettoPoint, RistrettoPoint), b: (RistrettoPoint, RistrettoPoint), c: (RistrettoPoint, RistrettoPoint)) -> ((Scalar, RistrettoPoint, (RistrettoPoint, RistrettoPoint)), Scalar) {
         let (a1, a2) = a;
         let (b1, b2) = b;
         let (c1, c2) = c;
@@ -97,16 +97,16 @@ impl AMAC {
         let s2 = (a2 * self.secrets[Y_1]) + (b2 * self.secrets[Y_2]) + (c2 * self.secrets[Y_3]) + r2;
 
         //TODO: proof
-        (t, u, (s1, s2))
+        ((t, u, (s1, s2)), r)
     }
 }
 
-fn eg_enc(mut rng: &mut OsRng, g: RistrettoPoint, pk: RistrettoPoint, m: RistrettoPoint) -> (RistrettoPoint, RistrettoPoint) {
+pub fn eg_enc(mut rng: &mut OsRng, g: RistrettoPoint, pk: RistrettoPoint, m: RistrettoPoint) -> (RistrettoPoint, RistrettoPoint) {
     let r = Scalar::random(&mut rng);
     (g * r, (pk * r) + m)
 }
 
-fn eg_dec(sk: Scalar, ct: (RistrettoPoint, RistrettoPoint)) -> RistrettoPoint {
+pub fn eg_dec(sk: Scalar, ct: (RistrettoPoint, RistrettoPoint)) -> RistrettoPoint {
     let (c1, c2) = ct;
     c2 - (c1 * sk)
 }
@@ -151,7 +151,7 @@ fn blind_mac() {
     let pk = algm.g * h;
 
     let (a, b, c) = (eg_enc(&mut rng, algm.g, pk, e1), eg_enc(&mut rng, algm.g, pk, e2), eg_enc(&mut rng, algm.g, pk, gm));
-    let (t, u, ct) = algm.blind_issue(&mut rng, pk, a, b, c);
+    let ((t, u, ct), r) = algm.blind_issue(&mut rng, pk, a, b, c);
 
     let v = eg_dec(h, ct);
 
