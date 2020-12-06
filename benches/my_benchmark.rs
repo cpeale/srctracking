@@ -6,7 +6,7 @@ use rand_core::RngCore;
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
 
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn scheme_1(c: &mut Criterion) {
 
     let sizes = [10, 100, 200, 500, 800, 1000, 2000, 5000, 8000];
     let plat = Platform::new();
@@ -465,5 +465,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+fn scheme_2(c: &mut Criterion) {
+    let sizes = [10, 100, 200, 500, 800, 1000, 2000, 5000, 8000];
+}
+
+//criterion_group!(benches, scheme_1, scheme_2);
+criterion_group!(benches, scheme_2);
 criterion_main!(benches);

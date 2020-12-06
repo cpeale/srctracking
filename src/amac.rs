@@ -4,6 +4,7 @@
 * Credentials Supporting Efficient Verifiable Encryption, by
 * Chase et. al
 */
+use curve25519_dalek::constants;
 use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::rngs::OsRng;
@@ -14,7 +15,7 @@ pub struct AMAC {
     //public group params
     //order: G_V, G_w, G_w', G_x0, G_x1, G_y1, G_y2, G_y3, G_m
     pub params: Vec<RistrettoPoint>,
-    pub g: RistrettoPoint, //TODO: will maybe remove later
+    pub g: RistrettoPoint, //TODO: clarify this
 
     //secret keys
     //order: w, w', x_0, x_1, y_1, y_2, y_3
@@ -53,7 +54,7 @@ impl AMAC {
         let v_secrets: Vec<Scalar> = (0..7).map(|_| Scalar::random(&mut rng)).collect();
         AMAC {
             params: v_params.to_vec(),
-            g: RistrettoPoint::random(&mut rng), //TODO: how to deal with this
+            g: constants::RISTRETTO_BASEPOINT_POINT,
             secrets: v_secrets.to_vec(),
             cw: (v_params[G_W] * v_secrets[W]) + (v_params[G_W_P] * v_secrets[W_P]),
             i: v_params[G_V]
@@ -127,7 +128,7 @@ impl AMAC {
         let (t, r) = (Scalar::random(&mut rng), Scalar::random(&mut rng));
         let u = RistrettoPoint::random(&mut rng);
 
-        let r1 = self.g * r;
+        let r1 = r * self.g;
         let u_exp = self.secrets[X_0] + (self.secrets[X_1] * t);
         let r2 = (h * r) + (self.params[G_W] * self.secrets[W]) + (u * u_exp);
 
@@ -135,29 +136,14 @@ impl AMAC {
             (a1 * self.secrets[Y_1]) + (b1 * self.secrets[Y_2]) + (c1 * self.secrets[Y_3]) + r1;
         let s2 =
             (a2 * self.secrets[Y_1]) + (b2 * self.secrets[Y_2]) + (c2 * self.secrets[Y_3]) + r2;
-        //TODO: proof
         ((t, u, (s1, s2)), r)
     }
-}
-
-pub fn eg_enc(
-    mut rng: &mut OsRng,
-    g: RistrettoPoint,
-    pk: RistrettoPoint,
-    m: RistrettoPoint,
-) -> (RistrettoPoint, RistrettoPoint) {
-    let r = Scalar::random(&mut rng);
-    (g * r, (pk * r) + m)
-}
-
-pub fn eg_dec(sk: Scalar, ct: (RistrettoPoint, RistrettoPoint)) -> RistrettoPoint {
-    let (c1, c2) = ct;
-    c2 - (c1 * sk)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::el_gamal::ElGamal;
 
     #[test]
     fn basic_mac() {
@@ -194,18 +180,15 @@ mod tests {
 
         let gm = algm.params[G_M] * m;
 
-        //eg setup
-        let h = Scalar::random(&mut rng);
-        let pk = algm.g * h;
-
+        let eg = ElGamal::new(&mut rng);
         let (a, b, c) = (
-            eg_enc(&mut rng, algm.g, pk, e1),
-            eg_enc(&mut rng, algm.g, pk, e2),
-            eg_enc(&mut rng, algm.g, pk, gm),
+            eg.enc(&mut rng, e1),
+            eg.enc(&mut rng, e2),
+            eg.enc(&mut rng, gm),
         );
-        let ((t, u, ct), _) = algm.blind_issue(&mut rng, pk, a, b, c);
+        let ((t, u, ct), _) = algm.blind_issue(&mut rng, eg.pk, a, b, c);
 
-        let v = eg_dec(h, ct);
+        let v = eg.dec(ct);
 
         algm.verify(e1, e2, m, (t, u, v));
     }

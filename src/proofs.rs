@@ -51,6 +51,7 @@ mod tests {
     use curve25519_dalek::scalar::Scalar;
     use rand::rngs::OsRng;
     use zkp::Transcript;
+    use crate::el_gamal::ElGamal;
 
     #[test]
     fn basic_pf_test() {
@@ -218,15 +219,9 @@ mod tests {
         let m = Scalar::random(&mut rng);
         let M = algm.params[G_M] * m;
 
-        let h = Scalar::random(&mut rng);
-        let pk = algm.g * h;
-
-        let (a, b, c) = (
-            eg_enc(&mut rng, algm.g, pk, E1),
-            eg_enc(&mut rng, algm.g, pk, E2),
-            eg_enc(&mut rng, algm.g, pk, M),
-        );
-        let ((t, U, ct), r) = algm.blind_issue(&mut rng, pk, a, b, c);
+        let eg = ElGamal::new(&mut rng);
+        let (a, b, c) = (eg.enc(&mut rng, E1), eg.enc(&mut rng, E2), eg.enc(&mut rng, M));
+        let ((t, U, ct), r) = algm.blind_issue(&mut rng, eg.pk, a, b, c);
 
         let Ut = U * t;
         let Gv_over_I = algm.params[G_V] - algm.i;
@@ -256,7 +251,7 @@ mod tests {
                     B2: &b.1,
                     C1: &c.0,
                     C2: &c.1,
-                    H: &pk,
+                    H: &eg.pk,
                     G: &algm.g,
                     Gw: &algm.params[G_W],
                     Gwp: &algm.params[G_W_P],
@@ -291,7 +286,7 @@ mod tests {
                 B2: &b.1.compress(),
                 C1: &c.0.compress(),
                 C2: &c.1.compress(),
-                H: &pk.compress(),
+                H: &eg.pk.compress(),
                 G: &algm.g.compress(),
                 Gw: &algm.params[G_W].compress(),
                 Gwp: &algm.params[G_W_P].compress(),
