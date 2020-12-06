@@ -4,7 +4,19 @@
 #![allow(non_snake_case)]
 
 //presenting a msg
-//TODO
+define_proof! {
+    present,
+    "Proof for presenting forward credentials",
+    (z, z0, m, z_p, r, t),
+    (Z, Cx1, Cx0, Cm, Ce1, Ce2, Cm_p, Ce1_p, Ce2_p),
+    (I, Gx0, Gx1, Gy1, Gy2, Gy3, Gm, G, Y):
+    Z = (z * I),
+    Cx1 = (t * Cx0 + z0 * Gx0 + z * Gx1),
+    Cm = (z * Gy3 + m * Gm),
+    Cm_p = (z_p * Gy3),
+    Ce1_p = (z_p * Gy1 + r * G),
+    Ce2_p = (z_p * Gy2 + r * Y)
+}
 
 //redeeming a message
 //TODO
@@ -47,11 +59,11 @@ mod tests {
     extern crate bincode;
     use super::*;
     use crate::amac::*;
+    use crate::el_gamal::ElGamal;
     use curve25519_dalek::ristretto::RistrettoPoint;
     use curve25519_dalek::scalar::Scalar;
     use rand::rngs::OsRng;
     use zkp::Transcript;
-    use crate::el_gamal::ElGamal;
 
     #[test]
     fn basic_pf_test() {
@@ -220,7 +232,11 @@ mod tests {
         let M = algm.params[G_M] * m;
 
         let eg = ElGamal::new(&mut rng);
-        let (a, b, c) = (eg.enc(&mut rng, E1), eg.enc(&mut rng, E2), eg.enc(&mut rng, M));
+        let (a, b, c) = (
+            eg.enc(&mut rng, E1),
+            eg.enc(&mut rng, E2),
+            eg.enc(&mut rng, M),
+        );
         let ((t, U, ct), r) = algm.blind_issue(&mut rng, eg.pk, a, b, c);
 
         let Ut = U * t;
@@ -296,6 +312,105 @@ mod tests {
                 Gy1: &algm.params[G_Y1].compress(),
                 Gy2: &algm.params[G_Y2].compress(),
                 Gy3: &algm.params[G_Y3].compress(),
+            },
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn present_pf_test() {
+        let mut rng = OsRng {};
+        let algm = AMAC::init(&mut rng);
+        let eg = ElGamal::new(&mut rng);
+
+        let uid = RistrettoPoint::random(&mut rng);
+        let m = Scalar::random(&mut rng);
+
+        let (e1, e2) = eg.enc(&mut rng, uid);
+        let (t, U, V) = algm.mac(&mut rng, e1, e2, m);
+        
+        let (z, z_p, r) = (Scalar::random(&mut rng), Scalar::random(&mut rng), Scalar::random(&mut rng));
+        let z0 = - z * t;
+
+        let Z = algm.i * z;
+        let Cx1 = z * algm.params[G_X1] + U *t;
+        let Cx0 = z * algm.params[G_X0] + U;
+        let Cm = algm.params[G_Y3] * z + algm.params[G_M] * m;
+        let Ce1 = (z * algm.params[G_Y1]) + e1;
+        let Ce2 = (z * algm.params[G_Y2]) + e2;
+
+        let fCm = Cm + (z_p * algm.params[G_Y3]);
+        let fCe1 = (z_p * algm.params[G_Y1]) + (algm.g * r) + Ce1;
+        let fCe2 = (z_p * algm.params[G_Y2]) + (eg.pk * r) + Ce2;
+
+        let (Cm_p, Ce1_p, Ce2_p) = (fCm - Cm, fCe1 - Ce1, fCe2 - Ce2);
+
+        let Cv = z * algm.params[G_V] + V;
+
+        // Prover's scope
+        let (proof, _points) = {
+            let mut transcript = Transcript::new(b"Present Test");
+            present::prove_compact(
+                &mut transcript,
+                present::ProveAssignments {
+                    z: &z, 
+                    z0: &z0, 
+                    m: &m, 
+                    z_p: &z_p, 
+                    r: &r, 
+                    t: &t,
+                    Z: &Z, 
+                    Cx1: &Cx1, 
+                    Cx0: &Cx0, 
+                    Cm: &Cm, 
+                    Ce1: &Ce1, 
+                    Ce2: &Ce2, 
+                    Cm_p: &Cm_p, 
+                    Ce1_p: &Ce1_p, 
+                    Ce2_p: &Ce2_p,
+                    I: &algm.i, 
+                    Gx0: &algm.params[G_X0], 
+                    Gx1: &algm.params[G_X1], 
+                    Gy1: &algm.params[G_Y1], 
+                    Gy2: &algm.params[G_Y2], 
+                    Gy3: &algm.params[G_Y3], 
+                    Gm: &algm.params[G_M], 
+                    G: &algm.g, 
+                    Y: &eg.pk,
+                },
+            )
+        };
+
+        // Serialize and parse bincode representation
+        let proof_bytes = bincode::serialize(&proof).unwrap();
+        let parsed_proof: present::CompactProof = bincode::deserialize(&proof_bytes).unwrap();
+
+        // Verifier logic
+        let plat_Z = Cv - (algm.secrets[W] * algm.params[G_W] + algm.secrets[X_0] * Cx0 + algm.secrets[X_1] * Cx1 + algm.secrets[Y_1] * Ce1 + algm.secrets[Y_2] * Ce2 + algm.secrets[Y_3] * Cm);
+
+        let mut transcript = Transcript::new(b"Present Test");
+        assert!(present::verify_compact(
+            &parsed_proof,
+            &mut transcript,
+            present::VerifyAssignments {
+                Z: &plat_Z.compress(), 
+                    Cx1: &Cx1.compress(), 
+                    Cx0: &Cx0.compress(), 
+                    Cm: &Cm.compress(), 
+                    Ce1: &Ce1.compress(), 
+                    Ce2: &Ce2.compress(), 
+                    Cm_p: &Cm_p.compress(), 
+                    Ce1_p: &Ce1_p.compress(), 
+                    Ce2_p: &Ce2_p.compress(),
+                    I: &algm.i.compress(), 
+                    Gx0: &algm.params[G_X0].compress(), 
+                    Gx1: &algm.params[G_X1].compress(), 
+                    Gy1: &algm.params[G_Y1].compress(), 
+                    Gy2: &algm.params[G_Y2].compress(), 
+                    Gy3: &algm.params[G_Y3].compress(), 
+                    Gm: &algm.params[G_M].compress(), 
+                    G: &algm.g.compress(), 
+                    Y: &eg.pk.compress(),
             },
         )
         .is_ok());
