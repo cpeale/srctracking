@@ -322,4 +322,82 @@ mod tests {
 
         verifier2.overall_check(challenge);
     }
+
+    #[test]
+    fn diff_order_check() {
+        let mut rng = OsRng {};
+        let B = dalek_constants::RISTRETTO_BASEPOINT_POINT;
+        let H = RistrettoPoint::hash_from_bytes::<Sha512>(B.compress().as_bytes());
+
+        let mut transcript = Transcript::new(b"DLEQTest");
+
+        let (proof, cmpr_A, cmpr_G) = {
+            let x = Scalar::from(89327492234u64);
+
+            let A = B; //wrong assignments for A and G
+            let G = H;
+
+            let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
+
+            // XXX committing var names to transcript forces ordering (?)
+            let var_x = prover.allocate_scalar(b"x", x);
+            let (var_B, _) = prover.allocate_point(b"B", B);
+            let (var_H, _) = prover.allocate_point(b"H", H);
+            let (var_A, cmpr_A) = prover.allocate_point(b"A", A);
+            let (var_G, cmpr_G) = prover.allocate_point(b"G", G);
+
+            dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
+
+            (prover.sim_impl(&mut rng), cmpr_A, cmpr_G)
+        };
+
+        let (challenge, comms, resps, cmpr_A2, cmpr_G2) = {
+            let x = Scalar::from(89327492234u64);
+
+            let A = B * x;
+            let G = H * x;
+
+            let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
+
+            // XXX committing var names to transcript forces ordering (?)
+            let var_x = prover.allocate_scalar(b"x", x);
+            let (var_B, _) = prover.allocate_point(b"B", B);
+            let (var_H, _) = prover.allocate_point(b"H", H);
+            let (var_A, cmpr_A) = prover.allocate_point(b"A", A);
+            let (var_G, cmpr_G) = prover.allocate_point(b"G", G);
+
+            dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
+
+            let (commitments, blindings, _) = prover.prove_impl();
+            let (new_resp, challenge) = prover.recompute_responses(proof.0, blindings);
+            (challenge, commitments, new_resp, cmpr_A, cmpr_G)
+        };
+
+        let mut transcript = Transcript::new(b"DLEQTest");
+        let mut verifier = OrVerifier::new(b"DLEQProof", &mut transcript);
+
+        let var_x = verifier.allocate_scalar(b"x");
+        let var_B = verifier.allocate_point(b"B", B.compress()).unwrap();
+        let var_H = verifier.allocate_point(b"H", H.compress()).unwrap();
+        let var_A = verifier.allocate_point(b"A", cmpr_A).unwrap();
+        let var_G = verifier.allocate_point(b"G", cmpr_G).unwrap();
+
+        dleq_statement(&mut verifier, var_x, var_A, var_G, var_B, var_H);
+
+        verifier.add_comms(proof.0, proof.1);
+
+        let mut verifier2 = OrVerifier::new(b"DLEQProof", &mut transcript);
+
+        let var_x = verifier2.allocate_scalar(b"x");
+        let var_B = verifier2.allocate_point(b"B", B.compress()).unwrap();
+        let var_H = verifier2.allocate_point(b"H", H.compress()).unwrap();
+        let var_A = verifier2.allocate_point(b"A", cmpr_A2).unwrap();
+        let var_G = verifier2.allocate_point(b"G", cmpr_G2).unwrap();
+
+        dleq_statement(&mut verifier2, var_x, var_A, var_G, var_B, var_H);
+
+        verifier2.add_comms(challenge - proof.0, resps);
+
+        verifier2.overall_check(challenge);
+    }
 }

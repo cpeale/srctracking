@@ -3,6 +3,9 @@
 */
 #![allow(non_snake_case)]
 
+use zkp::toolbox::SchnorrCS;
+
+
 //presenting a msg
 define_proof! {
     present,
@@ -18,7 +21,81 @@ define_proof! {
     Ce2_p = (z_p * Gy2 + r * Y)
 }
 
+fn receive_author<CS: SchnorrCS>(
+    cs: &mut CS,
+    h: CS::ScalarVar,
+    r1: CS::ScalarVar,
+    r2: CS::ScalarVar,
+    r3: CS::ScalarVar,
+    ma: CS::ScalarVar,
+    za: CS::ScalarVar,
+    mf: CS::ScalarVar,
+    zf: CS::ScalarVar,
+    rnd: CS::ScalarVar,
+    H: CS::PointVar,
+    G: CS::PointVar,
+    Y: CS::PointVar,
+    Gm: CS::PointVar,
+    Gy3: CS::PointVar,
+    Ca: CS::PointVar,
+    Cm: CS::PointVar,
+    A1: CS::PointVar,
+    A2: CS::PointVar,
+    B1: CS::PointVar,
+    B2_over_E1: CS::PointVar,
+    C1: CS::PointVar,
+    C2_over_E2: CS::PointVar,
+) {
+    cs.constrain(H, vec![(h, G)]); //H = G^h
+    cs.constrain(A1, vec![(r1, G)]); //A1 = G^r1
+    cs.constrain(B1, vec![(r2, G)]); //B1 = G^r2
+    cs.constrain(C1, vec![(r3, G)]); //C1 = G^r3
+    cs.constrain(Ca, vec![(ma, Gm), (za, Gy3)]); //Ca = Gm^ma * Gy3^za
+    cs.constrain(Cm, vec![(mf, Gm), (zf, Gy3)]);  //Cf = Gm^mf * Gy3^zf
+    
+    cs.constrain(A2, vec![(r1, H), (ma, Gm)]);  //A2 = Gm^ma * H^r1
+    cs.constrain(B2_over_E1, vec![(r2, H), (rnd, G)]);  //B2/E1 = G^rnd * H^r2
+    cs.constrain(C2_over_E2, vec![(r3, H), (rnd, Y)]);  //C2/E2 = Y^rnd * H^r3
+}
 
+fn receive_forward<CS: SchnorrCS>(
+    cs: &mut CS,
+    h: CS::ScalarVar,
+    r1: CS::ScalarVar,
+    r2: CS::ScalarVar,
+    r3: CS::ScalarVar,
+    ma: CS::ScalarVar,
+    za: CS::ScalarVar,
+    mf: CS::ScalarVar,
+    zf: CS::ScalarVar,
+    rnd: CS::ScalarVar,
+    H: CS::PointVar,
+    G: CS::PointVar,
+    Y: CS::PointVar,
+    Gm: CS::PointVar,
+    Gy3: CS::PointVar,
+    Ca: CS::PointVar,
+    Cm: CS::PointVar,
+    A1: CS::PointVar,
+    A2: CS::PointVar,
+    B1: CS::PointVar,
+    B2_over_Ce1: CS::PointVar,
+    C1: CS::PointVar,
+    C2_over_Ce2: CS::PointVar,
+    neg_Gy1: CS::PointVar,
+    neg_Gy2: CS::PointVar,
+) {
+    cs.constrain(H, vec![(h, G)]); //H = G^h
+    cs.constrain(A1, vec![(r1, G)]); //A1 = G^r1
+    cs.constrain(B1, vec![(r2, G)]); //B1 = G^r2
+    cs.constrain(C1, vec![(r3, G)]); //C1 = G^r3
+    cs.constrain(Ca, vec![(ma, Gm), (za, Gy3)]); //Ca = Gm^ma * Gy3^za
+    cs.constrain(Cm, vec![(mf, Gm), (zf, Gy3)]);  //Cf = Gm^mf * Gy3^zf
+    
+    cs.constrain(A2, vec![(r1, H), (mf, Gm)]);  //A2 = Gm^mf * H^r1
+    cs.constrain(B2_over_Ce1, vec![(r2, H), (rnd, G), (zf, neg_Gy1)]);  //B2/Ce1 = G^rnd * H^r2 / Gy1^zf
+    cs.constrain(C2_over_Ce2, vec![(r3, H), (rnd, Y), (zf, neg_Gy2)]);  //C2/Ce2 = Y^rnd * H^r3 / Gy2^zf
+}
 
 //issuing a cred
 define_proof! {
