@@ -18,8 +18,7 @@ define_proof! {
     Ce2_p = (z_p * Gy2 + r * Y)
 }
 
-//redeeming a message
-//TODO
+
 
 //issuing a cred
 define_proof! {
