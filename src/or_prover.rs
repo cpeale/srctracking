@@ -1,6 +1,7 @@
 /* Modified prover from dalek-cryptography/zkp
 * to work with ORs
 */
+#![allow(non_snake_case)]
 
 use rand::thread_rng;
 use rand::rngs::OsRng;
