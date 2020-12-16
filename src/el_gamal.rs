@@ -2,6 +2,7 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::constants;
 use rand::rngs::OsRng;
+use rand_core::{CryptoRng, RngCore};
 
 pub struct ElGamal {
     pub pk: RistrettoPoint,

@@ -13,7 +13,7 @@ harness = false
 
 [dependencies]
 rand = "0.7.3"
-rand_core = "0.4"
+rand_core = "^0.4"
 hashbrown = "0.1"
 aes = "0.3"
 block-modes = "0.3"
