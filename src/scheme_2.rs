@@ -183,10 +183,13 @@ impl User {
         )
     }
 
-    fn present_auth(&mut self, mut rng: &mut OsRng, plat: &Platform) -> PresentOut {
-        let (t, U, V) = self.ad.mac;
-        let (e1, e2) = self.ad.src;
+    fn present(&mut self, mut rng: &mut OsRng, plat: &Platform, fd: Option<FD>) -> PresentOut {
+        //unpack correct credentials for forwarding vs authoring
+        let (t, U, V) = fd.as_ref().map_or(self.ad.mac, |f| f.mac);
+        let (e1, e2) = fd.as_ref().map_or(self.ad.src, |f| f.src);
+        let m = fd.as_ref().map_or(self.ad.m, |f| f.m);
 
+        //construct commitments
         let (z, z_p, r) = (
             Scalar::random(&mut rng),
             Scalar::random(&mut rng),
@@ -196,7 +199,7 @@ impl User {
         let Z = plat.algm.i * z;
         let Cx1 = z * plat.algm.params[G_X1] + U * t;
         let Cx0 = z * plat.algm.params[G_X0] + U;
-        let Cm = plat.algm.params[G_Y3] * z + plat.algm.params[G_M] * self.ad.m;
+        let Cm = plat.algm.params[G_Y3] * z + plat.algm.params[G_M] * m;
         let Ce1 = (z * plat.algm.params[G_Y1]) + e1;
         let Ce2 = (z * plat.algm.params[G_Y2]) + e2;
 
@@ -216,7 +219,7 @@ impl User {
                 present::ProveAssignments {
                     z: &z,
                     z0: &z0,
-                    m: &self.ad.m,
+                    m: &m,
                     z_p: &z_p,
                     r: &r,
                     t: &t,
@@ -257,9 +260,9 @@ impl User {
             Cf: (points.Cm_p, points.Ce1_p, points.Ce2_p),
             o_f: vec![
                 (z + z_p).to_bytes(),
-                self.ad.m.to_bytes(),
-                (self.ad.src.0 + (plat.algm.g * r)).compress().to_bytes(),
-                (self.ad.src.1 + (plat.eg.pk * r)).compress().to_bytes(),
+                m.to_bytes(),
+                (e1 + (plat.algm.g * r)).compress().to_bytes(),
+                (e2 + (plat.eg.pk * r)).compress().to_bytes(),
             ]
             .concat(),
         }
@@ -282,7 +285,7 @@ impl User {
         (Header<PublicKey>, Vec<u8>),
     ) {
         //construct proof
-        let out = self.present_auth(&mut rng, plat);
+        let out = self.present(&mut rng, plat, None);
 
         //author commitment
         let z = Scalar::random(&mut rng);
@@ -310,9 +313,19 @@ impl User {
     }
 
     //forward message (NI)
-    //construct proof
+    pub fn forward(&mut self,
+        mut rng: &mut OsRng,
+        plat: &Platform,
+        plaintext: &[u8],
+        fd: FD
+    ) {
+        //let out = self.present_fwd(&mut rng, plat);
+        //construct proof
     //encrypt openings
     //pass to plat
+    }
+    
+
     //receive
     //construct proof
     //pass to plat
@@ -377,4 +390,5 @@ mod tests {
         u1.author(&mut rng, &plat, b"test");
         u1.author(&mut rng, &plat, b"another test");
     }
+
 }
