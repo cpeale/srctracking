@@ -4,6 +4,7 @@
 #![allow(non_snake_case)]
 
 use zkp::toolbox::SchnorrCS;
+use curve25519_dalek::scalar::Scalar;
 
 //presenting a msg
 define_proof! {
@@ -20,7 +21,7 @@ define_proof! {
     Ce2_p = (z_p * Gy2 + r * Y)
 }
 
-fn receive_author<CS: SchnorrCS>(
+pub fn receive_author<CS: SchnorrCS>(
     cs: &mut CS,
     h: CS::ScalarVar,
     r1: CS::ScalarVar,
@@ -57,7 +58,7 @@ fn receive_author<CS: SchnorrCS>(
     cs.constrain(C2_over_E2, vec![(r3, H), (rnd, Y)]); //C2/E2 = Y^rnd * H^r3
 }
 
-fn receive_forward<CS: SchnorrCS>(
+pub fn receive_forward<CS: SchnorrCS>(
     cs: &mut CS,
     h: CS::ScalarVar,
     r1: CS::ScalarVar,
@@ -127,6 +128,14 @@ define_proof! {
     (A),
     (B):
     A = (x * B)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OrProof {
+    pub challenge: Scalar,
+    pub subchallenge: Scalar,
+    pub resp1: Vec<Scalar>,
+    pub resp2: Vec<Scalar>,
 }
 
 #[cfg(test)]

@@ -428,6 +428,8 @@ dependencies = [
  "rand",
  "rand_core 0.4.2",
  "rand_os",
+ "serde",
+ "serde_derive",
  "sha2 0.8.2",
  "subtle 2.3.0",
  "x25519-dalek",
