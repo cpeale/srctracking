@@ -156,7 +156,7 @@ impl Platform {
             var_H, var_G, var_Y, var_Gm, var_Gy3, var_Ca, var_Cm, 
             var_A1, var_A2, var_B1, var_B2_over_E1, var_C1, var_C2_over_E2);
         
-        verifier.add_comms(parsed_proof.challenge - parsed_proof.subchallenge, parsed_proof.resp1);
+        verifier.add_comms(parsed_proof.subchallenge, parsed_proof.resp1);
 
         let mut verifier2 = OrVerifier::new(b"rec_proof", &mut transcript);
         
@@ -192,7 +192,7 @@ impl Platform {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
         
-        verifier2.add_comms(parsed_proof.subchallenge, parsed_proof.resp2);
+        verifier2.add_comms(parsed_proof.challenge - parsed_proof.subchallenge, parsed_proof.resp2);
         verifier2.overall_check(parsed_proof.challenge);
     }
 
@@ -202,7 +202,7 @@ impl Platform {
         attributes: ((RistrettoPoint, RistrettoPoint), (RistrettoPoint, RistrettoPoint), (RistrettoPoint, RistrettoPoint)),
     ) -> ( Vec<u8>, (Scalar, RistrettoPoint, (RistrettoPoint, RistrettoPoint))) {
         let (a, b, c) = attributes;
-        let ((t, U, ct), r) = self.algm.blind_issue(&mut rng, H, a, b, c);
+        let ((t, U, ct), r) = self.algm.blind_issue(&mut rng, H, b, c, a); //TODO: Fix blind issue to be the correct order
 
         let Ut = U * t;
         let Gv_over_I = self.algm.params[G_V] - self.algm.i;
@@ -283,6 +283,8 @@ impl Platform {
 
         (proof_bytes, (t, U, ct))
     }
+
+
     //validate report
     //verify proof
     //decrypt
@@ -519,7 +521,7 @@ impl User {
     
 
     //receive
-    pub fn receive(&mut self, pd: PlatformData, plat: &Platform, mut rng: &mut OsRng) {
+    pub fn receive(&mut self, pd: PlatformData, plat: &Platform, mut rng: &mut OsRng) -> (Vec<u8>, FD) {
         //get contents
         let pt = self.msg_scheme.ratchet_decrypt(&pd.e.0, &pd.e.1, AD).unwrap();
         let (o_a, rest) = pt.split_at(OA_SIZE);
@@ -545,7 +547,7 @@ impl User {
 
         let data = ProofData {
             Ca: Ca,
-            src: pd.src,
+            srca: pd.src,
             Cm: Cm,
             Ce1: Ce1,
             Ce2: Ce2,
@@ -553,25 +555,23 @@ impl User {
             za: za,
             mf: mf,
             zf: zf,
+            srcf: (CompressedRistretto::from_slice(e1).decompress().unwrap(), CompressedRistretto::from_slice(e2).decompress().unwrap()),
         };
 
         if ma == plat.bot {
-            //println!("Got a forward");
-            //let pf = self.receive_forward_proof()
+            println!("Got a forward");
+            assert_eq!(mf, Scalar::hash_from_bytes::<Sha512>(plaintext));
+            let fd = self.receive_forward_proof(&mut rng, plat, data);
+            (plaintext.to_vec(), fd)
         } else {
-            //println!("Got an authored message");
-            self.receive_author_proof(&mut rng, plat, data);
+            assert_eq!(ma, Scalar::hash_from_bytes::<Sha512>(plaintext));
+            let fd = self.receive_author_proof(&mut rng, plat, data);
+            (plaintext.to_vec(), fd)
         }
 
-        //println!("Cm: {:?}, Ce1: {:?}, Ce2: {:?}", Cm.compress(), Ce1.compress(), Ce2.compress());
-        //construct proof
-        //pass to plat
-        //get new cert from plat
-        //verify cert
-        //decrypt cert
     }
 
-    fn receive_author_proof(&self, mut rng: &mut OsRng, plat: &Platform, data: ProofData) {
+    fn receive_author_proof(&self, mut rng: &mut OsRng, plat: &Platform, data: ProofData) -> FD {
         let rec_eg = ElGamal::new(&mut rng);
 
         //let (ma, mf) = (Scalar::random(&mut rng), Scalar::random(&mut rng));
@@ -580,7 +580,7 @@ impl User {
         //let uid = RistrettoPoint::random(&mut rng);
 
         //let src = plat.eg.enc(&mut rng, uid);
-        let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.src);
+        let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srca);
 
         let (a, r1) = rec_eg.enc_w_rand(&mut rng, Ma);
         let (b, r2) = rec_eg.enc_w_rand(&mut rng, rand_src.0);
@@ -612,9 +612,9 @@ impl User {
         let (var_A1, _) = prover.allocate_point(b"A1", a.0);
         let (var_A2, _) = prover.allocate_point(b"A2", a.1);
         let (var_B1, _) = prover.allocate_point(b"B1", b.0);
-        let (var_B2_over_E1, _) = prover.allocate_point(b"B2_over_E1", b.1 - data.src.0);
+        let (var_B2_over_E1, _) = prover.allocate_point(b"B2_over_E1", b.1 - data.srca.0);
         let (var_C1, _) = prover.allocate_point(b"C1", c.0);
-        let (var_C2_over_E2, _) = prover.allocate_point(b"C2_over_E2", c.1 - data.src.1);
+        let (var_C2_over_E2, _) = prover.allocate_point(b"C2_over_E2", c.1 - data.srca.1);
 
         receive_author(&mut prover, var_h, var_r1, var_r2, var_r3, 
             var_ma, var_za, var_mf, var_zf, var_rnd,
@@ -665,31 +665,146 @@ impl User {
 
         let pf = OrProof {
             challenge: challenge,
-            subchallenge: sub_challenge,
+            subchallenge: first_chall,
             resp1: resp1,
             resp2: resp2,
         };
-
-        
-        //let points = vec![]
 
         let proof_bytes = bincode::serialize(&pf).unwrap();
 
         plat.verify_receive(proof_bytes, cmpH, 
             ((cmpA1, cmpA2), (cmpB1, b.1.compress()), (cmpC1, c.1.compress())), 
             cmpCa, cmpCf, Ce1.compress(), 
-            Ce2.compress(), (data.src.0.compress(), data.src.1.compress()));
+            Ce2.compress(), (data.srca.0.compress(), data.srca.1.compress()));
 
         let cert = plat.issue_cert(&mut rng, rec_eg.pk, 
         (a, b, c));
 
-        assert_eq!(rec_eg.dec(a), data.ma * plat.algm.params[G_M]);
-        assert_eq!(rec_eg.dec(b), rand_src.0);
-        assert_eq!(rec_eg.dec(c), rand_src.1);
+        let mac = self.verify_cert(cert.0, cert.1, plat, rec_eg, (a, b, c));
+        plat.algm
+            .verify(rand_src.0, rand_src.1, data.ma, mac);
+
+        FD {
+            m: data.ma,
+            src: (rand_src.0, rand_src.1),
+            mac: mac,
+        }
+        
+    }
+
+    fn receive_forward_proof(&self, mut rng: &mut OsRng, plat: &Platform, data: ProofData) -> FD {
+        let rec_eg = ElGamal::new(&mut rng);
+
+        let Ma = plat.algm.params[G_M] * data.ma;
+        let Mf = plat.algm.params[G_M] * data.mf;
+
+        let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srcf);
+
+        let (a, r1) = rec_eg.enc_w_rand(&mut rng, Mf);
+        let (b, r2) = rec_eg.enc_w_rand(&mut rng, rand_src.0);
+        let (c, r3) = rec_eg.enc_w_rand(&mut rng, rand_src.1);
+
+        let (za, zf) = (data.za, data.zf);
+        let (Ca, Cf, Ce1, Ce2) = (data.Ca, data.Cm, data.Ce1, data.Ce2);
+
+        let mut transcript = Transcript::new(b"receive test");
+        let mut prover = OrProver::new(b"rec_proof", &mut transcript);
+
+        let var_h = prover.allocate_scalar(b"h", rec_eg.sk);
+        let var_r1 = prover.allocate_scalar(b"r1", r1);
+        let var_r2 = prover.allocate_scalar(b"r2", r2);
+        let var_r3 = prover.allocate_scalar(b"r3", r3);
+        let var_ma = prover.allocate_scalar(b"ma", data.ma);
+        let var_za = prover.allocate_scalar(b"za", za);
+        let var_mf = prover.allocate_scalar(b"mf", data.mf);
+        let var_zf = prover.allocate_scalar(b"zf", zf);
+        let var_rnd = prover.allocate_scalar(b"rnd", rnd);
+
+        let (var_H, _) = prover.allocate_point(b"H", rec_eg.pk);
+        let (var_G, _) = prover.allocate_point(b"G", plat.algm.g);
+        let (var_Y, _) = prover.allocate_point(b"Y", plat.eg.pk);
+        let (var_Gm, _) = prover.allocate_point(b"Gm", plat.algm.params[G_M]);
+        let (var_Gy3, _) = prover.allocate_point(b"Gy3", plat.algm.params[G_Y3]);
+        let (var_Ca, _) = prover.allocate_point(b"Ca", Ca);
+        let (var_Cm, _) = prover.allocate_point(b"Cm", Cf);
+        let (var_A1, _) = prover.allocate_point(b"A1", a.0);
+        let (var_A2, _) = prover.allocate_point(b"A2", a.1);
+        let (var_B1, _) = prover.allocate_point(b"B1", b.0);
+        let (var_B2_over_E1, _) = prover.allocate_point(b"B2_over_E1", b.1 - data.srca.0);
+        let (var_C1, _) = prover.allocate_point(b"C1", c.0);
+        let (var_C2_over_E2, _) = prover.allocate_point(b"C2_over_E2", c.1 - data.srca.1);
+
+        receive_author(&mut prover, var_h, var_r1, var_r2, var_r3, 
+            var_ma, var_za, var_mf, var_zf, var_rnd,
+            var_H, var_G, var_Y, var_Gm, var_Gy3, var_Ca, var_Cm, 
+            var_A1, var_A2, var_B1, var_B2_over_E1, var_C1, var_C2_over_E2);
+        
+        let proof = prover.sim_impl(&mut rng);
+
+        
+        let mut prover = OrProver::new(b"rec_proof", &mut transcript);
+
+        let var_h = prover.allocate_scalar(b"h", rec_eg.sk);
+        let var_r1 = prover.allocate_scalar(b"r1", r1);
+        let var_r2 = prover.allocate_scalar(b"r2", r2);
+        let var_r3 = prover.allocate_scalar(b"r3", r3);
+        let var_ma = prover.allocate_scalar(b"ma", data.ma);
+        let var_za = prover.allocate_scalar(b"za", za);
+        let var_mf = prover.allocate_scalar(b"mf", data.mf);
+        let var_zf = prover.allocate_scalar(b"zf", zf);
+        let var_rnd = prover.allocate_scalar(b"rnd", rnd);
+
+        let (var_H, cmpH) = prover.allocate_point(b"H", rec_eg.pk);
+        let (var_G, _) = prover.allocate_point(b"G", plat.algm.g);
+        let (var_Y, _) = prover.allocate_point(b"Y", plat.eg.pk);
+        let (var_Gm, _) = prover.allocate_point(b"Gm", plat.algm.params[G_M]);
+        let (var_Gy3, _) = prover.allocate_point(b"Gy3", plat.algm.params[G_Y3]);
+        let (var_Ca, cmpCa) = prover.allocate_point(b"Ca", Ca);
+        let (var_Cm, cmpCf) = prover.allocate_point(b"Cm", Cf);
+        let (var_A1, cmpA1) = prover.allocate_point(b"A1", a.0);
+        let (var_A2, cmpA2) = prover.allocate_point(b"A2", a.1);
+        let (var_B1, cmpB1) = prover.allocate_point(b"B1", b.0);
+        let (var_B2_over_Ce1, _) = prover.allocate_point(b"B2_over_Ce1", b.1 - Ce1);
+        let (var_C1, cmpC1) = prover.allocate_point(b"C1", c.0);
+        let (var_C2_over_Ce2, _) = prover.allocate_point(b"C2_over_Ce2", c.1 - Ce2);
+        let (var_neg_Gy1, _) = prover.allocate_point(b"neg_Gy1", -plat.algm.params[G_Y1]);
+        let (var_neg_Gy2, _) = prover.allocate_point(b"neg_Gy2", -plat.algm.params[G_Y2]);
+
+        receive_forward(&mut prover, var_h, var_r1, var_r2, var_r3, 
+            var_ma, var_za, var_mf, var_zf, var_rnd,
+            var_H, var_G, var_Y, var_Gm, var_Gy3, var_Ca, var_Cm, 
+            var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
+            var_neg_Gy1, var_neg_Gy2);
+
+            let (comms, blindings, _) = prover.prove_impl();
+            let (new_resp, challenge) = prover.recompute_responses(proof.0, blindings);
+
+        let pf = OrProof {
+            challenge: challenge,
+            subchallenge: proof.0,
+            resp1: proof.1,
+            resp2: new_resp,
+        };
+
+        let proof_bytes = bincode::serialize(&pf).unwrap();
+
+        plat.verify_receive(proof_bytes, cmpH, 
+            ((cmpA1, cmpA2), (cmpB1, b.1.compress()), (cmpC1, c.1.compress())), 
+            cmpCa, cmpCf, Ce1.compress(), 
+            Ce2.compress(), (data.srca.0.compress(), data.srca.1.compress()));
+            
+        let cert = plat.issue_cert(&mut rng, rec_eg.pk, 
+        (a, b, c));
 
         let mac = self.verify_cert(cert.0, cert.1, plat, rec_eg, (a, b, c));
-        //plat.algm
-        //    .verify(rand_src.0, rand_src.1, data.ma, mac);
+        plat.algm
+            .verify(rand_src.0, rand_src.1, data.mf, mac);
+
+        FD {
+            m: data.mf,
+            src: (rand_src.0, rand_src.1),
+            mac: mac,
+        }
         
     }
 
@@ -759,7 +874,7 @@ pub struct PlatformData {
 
 pub struct ProofData {
     Ca: RistrettoPoint,
-    src: (RistrettoPoint, RistrettoPoint),
+    srca: (RistrettoPoint, RistrettoPoint),
     Cm: RistrettoPoint,
     Ce1: RistrettoPoint,
     Ce2: RistrettoPoint,
@@ -767,6 +882,7 @@ pub struct ProofData {
     za: Scalar,
     mf: Scalar,
     zf: Scalar,
+    srcf: (RistrettoPoint, RistrettoPoint),
 }
 
 const SCALAR_SIZE: usize = 32;
@@ -836,7 +952,33 @@ mod tests {
         let plat = Platform::new(&mut rng);
         let (mut u1, mut u2) = User::new(&mut rng, &plat);
         let pd = u1.author(&mut rng, &plat, b"test");
-        u2.receive(pd, &plat, &mut rng);
+        let (msg, fd) = u2.receive(pd, &plat, &mut rng);
+        assert_eq!(msg, b"test".to_vec());
+        assert_eq!(Scalar::hash_from_bytes::<Sha512>(b"test"), fd.m);
+        assert_eq!(u1.userid, plat.eg.dec(fd.src));
+        plat.algm.verify(fd.src.0, fd.src.1, fd.m, fd.mac);
+    }
+
+    #[test]
+    fn author_and_forward_test() {
+        let mut rng = OsRng {};
+        let plat = Platform::new(&mut rng);
+        let (mut u1, mut u2) = User::new(&mut rng, &plat);
+        let pd = u1.author(&mut rng, &plat, b"test");
+        let (msg, fd) = u2.receive(pd, &plat, &mut rng);
+
+        assert_eq!(msg, b"test".to_vec());
+        assert_eq!(Scalar::hash_from_bytes::<Sha512>(b"test"), fd.m);
+        assert_eq!(u1.userid, plat.eg.dec(fd.src));
+        plat.algm.verify(fd.src.0, fd.src.1, fd.m, fd.mac);
+
+        let pd = u2.forward(&mut rng, &plat, &msg, fd);
+        let (msg, fd) = u1.receive(pd, &plat, &mut rng);
+
+        assert_eq!(msg, b"test".to_vec());
+        assert_eq!(Scalar::hash_from_bytes::<Sha512>(b"test"), fd.m);
+        assert_eq!(u1.userid, plat.eg.dec(fd.src));
+        plat.algm.verify(fd.src.0, fd.src.1, fd.m, fd.mac);
     }
 
 }

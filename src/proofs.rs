@@ -109,7 +109,7 @@ define_proof! {
     V = (w * Gw + x0 * U + x1 * Ut + y1 * E1 + y2 * E2 + y3 * M)
 }
 
-define_proof! {
+/*define_proof! {
     blind_issue,
     "Proof for blind issuance of mac",
     (w, wp, x0, x1, y1, y2, y3, r),
@@ -119,6 +119,18 @@ define_proof! {
     GvOverI = (x0 * Gx0 + x1 * Gx1 + y1 * Gy1 + y2 * Gy2 + y3 * Gy3),
     S1 = (y1 * A1 + y2 * B1 + y3 * C1 + r * G),
     S2 = (y1 * A2 + y2 * B2 + y3 * C2 + r * H + w * Gw + x0 * U + x1 * Ut)
+}*/
+
+define_proof! {
+    blind_issue,
+    "Proof for blind issuance of mac",
+    (w, wp, x0, x1, y1, y2, y3, r),
+    (S1, S2, A1, A2, B1, B2, C1, C2, U, Ut, H),
+    (Cw, Gw, Gwp, GvOverI, Gx0, Gx1, Gy1, Gy2, Gy3, G):
+    Cw = (w * Gw + wp * Gwp),
+    GvOverI = (x0 * Gx0 + x1 * Gx1 + y1 * Gy1 + y2 * Gy2 + y3 * Gy3),
+    S1 = (y3 * A1 + y1 * B1 + y2 * C1 + r * G),
+    S2 = (y3 * A2 + y1 * B2 + y2 * C2 + r * H + w * Gw + x0 * U + x1 * Ut)
 }
 
 define_proof! {
@@ -320,11 +332,11 @@ mod tests {
 
         let eg = ElGamal::new(&mut rng);
         let (a, b, c) = (
+            eg.enc(&mut rng, M),
             eg.enc(&mut rng, E1),
             eg.enc(&mut rng, E2),
-            eg.enc(&mut rng, M),
         );
-        let ((t, U, ct), r) = algm.blind_issue(&mut rng, eg.pk, a, b, c);
+        let ((t, U, ct), r) = algm.blind_issue(&mut rng, eg.pk, b, c, a);
 
         let Ut = U * t;
         let Gv_over_I = algm.params[G_V] - algm.i;
@@ -402,6 +414,9 @@ mod tests {
             },
         )
         .is_ok());
+
+        let V = eg.dec(ct);
+        algm.verify(E1, E2, m, (t, U, V));
     }
 
     #[test]
