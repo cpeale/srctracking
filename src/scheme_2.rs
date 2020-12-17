@@ -8,7 +8,6 @@ use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use double_ratchet::Header;
 use rand::rngs::OsRng;
-use rand_core::{CryptoRng, RngCore};
 use rand_os::OsRng as OtherRng;
 use sha2::{Digest, Sha512};
 use zkp::Transcript;
@@ -23,9 +22,6 @@ pub struct Platform {
 }
 
 impl Platform {
-    //new plat
-    //gen mac keys
-    //gen eg keys
     pub fn new(mut rng: &mut OsRng) -> Platform {
         let algm = AMAC::init(&mut rng);
         let eg = ElGamal::new(&mut rng);
@@ -226,8 +222,8 @@ impl Platform {
                     Ut: &Ut,
                     S1: &ct.0,
                     S2: &ct.1,
-                    A1: &a.0, //mixed up because the issue proof switched around variables
-                    A2: &a.1, //todo: fix
+                    A1: &a.0, 
+                    A2: &a.1, 
                     B1: &b.0,
                     B2: &b.1,
                     C1: &c.0,
@@ -246,40 +242,8 @@ impl Platform {
             )
         };
 
-        // Serialize and parse bincode representation
+        // Serialize bincode representation
         let proof_bytes = bincode::serialize(&proof).unwrap();
-        let parsed_proof: blind_issue::CompactProof = bincode::deserialize(&proof_bytes).unwrap();
-
-        // Verifier logic
-        let mut transcript = Transcript::new(b"Blind Issue Test");
-        assert!(blind_issue::verify_compact(
-            &parsed_proof,
-            &mut transcript,
-            blind_issue::VerifyAssignments {
-                Cw: &self.algm.cw.compress(),
-                U: &U.compress(),
-                Ut: &Ut.compress(),
-                S1: &ct.0.compress(),
-                S2: &ct.1.compress(),
-                A1: &a.0.compress(),
-                A2: &a.1.compress(),
-                B1: &b.0.compress(),
-                B2: &b.1.compress(),
-                C1: &c.0.compress(),
-                C2: &c.1.compress(),
-                H: &H.compress(),
-                G: &self.algm.g.compress(),
-                Gw: &self.algm.params[G_W].compress(),
-                Gwp: &self.algm.params[G_W_P].compress(),
-                GvOverI: &Gv_over_I.compress(),
-                Gx0: &self.algm.params[G_X0].compress(),
-                Gx1: &self.algm.params[G_X1].compress(),
-                Gy1: &self.algm.params[G_Y1].compress(),
-                Gy2: &self.algm.params[G_Y2].compress(),
-                Gy3: &self.algm.params[G_Y3].compress(),
-            },
-        )
-        .is_ok());
 
         (proof_bytes, (t, U, ct))
     }
@@ -346,6 +310,9 @@ impl Platform {
         assert_eq!(Ce1, self.algm.params[G_Y1] * zf + ct.0);
         assert_eq!(Ce2, self.algm.params[G_Y2] * zf + ct.1);
 
+        //check message matches report
+        assert_eq!(mf, Scalar::hash_from_bytes::<Sha512>(plaintext));
+
         //decrypt
         self.eg.dec(ct)
     }
@@ -377,9 +344,7 @@ pub struct PresentOut {
 }
 
 impl User {
-    //new pair of users
-    //ratchet keys
-    //MAC creds
+    
     pub fn new(mut rng: &mut OsRng, plat: &Platform) -> (User, User) {
         let uid1 = RistrettoPoint::random(&mut rng);
         let uid2 = RistrettoPoint::random(&mut rng);
@@ -477,11 +442,6 @@ impl User {
             )
         };
 
-        //println!("Cm: {:?}, Ce1: {:?}, Ce2: {:?}", points.Cm_p, points.Ce1_p, points.Ce2_p);
-        // Serialize and parse bincode representation
-        //assert_eq!(fCe1, (plat.algm.params[G_Y1] * z_p) + (plat.algm.g * r) + Ce1);
-        assert_eq!(fCm, (plat.algm.params[G_M] * m) + ((z_p + z) * plat.algm.params[G_Y3]));
-
         PresentOut {
             proof: bincode::serialize(&proof).unwrap(),
             info: (
@@ -503,7 +463,6 @@ impl User {
         }
     }
 
-    //author message (non-interactive)
     pub fn author(
         &mut self,
         mut rng: &mut OsRng,
@@ -522,7 +481,7 @@ impl User {
 
         //encrypt openings
         let o_a = vec![m.to_bytes(), z.to_bytes()].concat();
-        let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); //todo: remove to vec
+        let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); 
         let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); //todo: how to get rid of this other rng?
 
         //pass to plat
@@ -541,7 +500,6 @@ impl User {
         }
     }
 
-    //forward message (NI)
     pub fn forward(&mut self,
         mut rng: &mut OsRng,
         plat: &Platform,
@@ -554,14 +512,13 @@ impl User {
 
         //author commitment
         let z = Scalar::random(&mut rng);
-        //let m = Scalar::hash_from_bytes::<Sha512>(plaintext);
         let M = plat.algm.params[G_M] * plat.bot;
         let Ca = plat.algm.params[G_Y3] * z + M;
         let cmpCa = Ca.compress();
 
         //encrypt openings
         let o_a = vec![plat.bot.to_bytes(), z.to_bytes()].concat();
-        let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); //todo: remove to vec
+        let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); 
         let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); //todo: how to get rid of this other rng?
 
         //pass to plat
@@ -594,7 +551,7 @@ impl User {
         let (mf, rest) = rest.split_at(SCALAR_SIZE);
         let (e1, e2) = rest.split_at(PT_SIZE);
 
-        //check comms, decide what is happening
+        //check comms
         let (ma, za) = (Scalar::from_bits(ma.try_into().unwrap()), Scalar::from_bits(za.try_into().unwrap()));
         let Ca = pd.Ca.decompress().unwrap();
         assert_eq!(Ca, plat.algm.params[G_Y3] * za + plat.algm.params[G_M] * ma);
@@ -619,6 +576,7 @@ impl User {
             srcf: (CompressedRistretto::from_slice(e1).decompress().unwrap(), CompressedRistretto::from_slice(e2).decompress().unwrap()),
         };
 
+        //forward or author
         if ma == plat.bot {
             println!("Got a forward");
             assert_eq!(mf, Scalar::hash_from_bytes::<Sha512>(plaintext));
@@ -635,12 +593,9 @@ impl User {
     fn receive_author_proof(&self, mut rng: &mut OsRng, plat: &Platform, data: ProofData) -> FD {
         let rec_eg = ElGamal::new(&mut rng);
 
-        //let (ma, mf) = (Scalar::random(&mut rng), Scalar::random(&mut rng));
         let Ma = plat.algm.params[G_M] * data.ma;
         let Mf = plat.algm.params[G_M] * data.mf;
-        //let uid = RistrettoPoint::random(&mut rng);
 
-        //let src = plat.eg.enc(&mut rng, uid);
         let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srca);
 
         let (a, r1) = rec_eg.enc_w_rand(&mut rng, Ma);
@@ -919,8 +874,7 @@ impl User {
     pub fn report(&mut self, fd: FD, mut rng: &mut OsRng, plat: &Platform) -> PresentOut {
         self.present(&mut rng, plat, Some(fd))
     }
-    //generate report
-    //create proof
+
 }
 
 pub struct FD {
