@@ -285,9 +285,70 @@ impl Platform {
     }
 
 
-    //validate report
-    //verify proof
-    //decrypt
+    pub fn validate_report(&self, plaintext: &[u8], out: PresentOut) -> RistrettoPoint {
+        //check proof
+        let parsed_proof: present::CompactProof = bincode::deserialize(&out.proof).unwrap();
+
+        let (nCv, nCx0, nCx1, nCm, nCe1, nCe2) = (
+            out.info.0.decompress().unwrap(),
+            out.info.1.decompress().unwrap(),
+            out.info.2.decompress().unwrap(),
+            out.info.3.decompress().unwrap(),
+            out.info.4.decompress().unwrap(),
+            out.info.5.decompress().unwrap(),
+        );
+
+        let plat_Z = nCv
+            - (self.algm.secrets[W] * self.algm.params[G_W]
+                + self.algm.secrets[X_0] * nCx0
+                + self.algm.secrets[X_1] * nCx1
+                + self.algm.secrets[Y_1] * nCe1
+                + self.algm.secrets[Y_2] * nCe2
+                + self.algm.secrets[Y_3] * nCm);
+
+        let mut transcript = Transcript::new(b"Present Test");
+        assert!(present::verify_compact(
+            &parsed_proof,
+            &mut transcript,
+            present::VerifyAssignments {
+                Z: &plat_Z.compress(),
+                Cx1: &out.info.2,
+                Cx0: &out.info.1,
+                Cm: &out.info.3,
+                Ce1: &out.info.4,
+                Ce2: &out.info.5,
+                Cm_p: &(out.Cf.0.decompress().unwrap() - nCm).compress(),
+                Ce1_p: &(out.Cf.1.decompress().unwrap() - nCe1).compress(),
+                Ce2_p: &(out.Cf.2.decompress().unwrap() - nCe2).compress(),
+                I: &self.algm.i.compress(),
+                Gx0: &self.algm.params[G_X0].compress(),
+                Gx1: &self.algm.params[G_X1].compress(),
+                Gy1: &self.algm.params[G_Y1].compress(),
+                Gy2: &self.algm.params[G_Y2].compress(),
+                Gy3: &self.algm.params[G_Y3].compress(),
+                Gm: &self.algm.params[G_M].compress(),
+                G: &self.algm.g.compress(),
+                Y: &self.eg.pk.compress(),
+            },
+        )
+        .is_ok());
+
+        //check commitments
+        let (zf, rest) = out.o_f.split_at(SCALAR_SIZE);
+        let (mf, rest) = rest.split_at(SCALAR_SIZE);
+        let (e1, e2) = rest.split_at(PT_SIZE);
+        let ct = (CompressedRistretto::from_slice(e1).decompress().unwrap(), CompressedRistretto::from_slice(e2).decompress().unwrap());
+
+        let (mf, zf) = (Scalar::from_bits(mf.try_into().unwrap()), Scalar::from_bits(zf.try_into().unwrap()));
+        let (Cm, Ce1, Ce2) = (out.Cf.0.decompress().unwrap(), out.Cf.1.decompress().unwrap(), out.Cf.2.decompress().unwrap());
+
+        assert_eq!(Cm, (self.algm.params[G_Y3] * zf) + (self.algm.params[G_M] * mf));
+        assert_eq!(Ce1, self.algm.params[G_Y1] * zf + ct.0);
+        assert_eq!(Ce2, self.algm.params[G_Y2] * zf + ct.1);
+
+        //decrypt
+        self.eg.dec(ct)
+    }
 }
 
 pub struct User {
@@ -855,6 +916,9 @@ impl User {
     }
     
 
+    pub fn report(&mut self, fd: FD, mut rng: &mut OsRng, plat: &Platform) -> PresentOut {
+        self.present(&mut rng, plat, Some(fd))
+    }
     //generate report
     //create proof
 }
@@ -979,6 +1043,19 @@ mod tests {
         assert_eq!(Scalar::hash_from_bytes::<Sha512>(b"test"), fd.m);
         assert_eq!(u1.userid, plat.eg.dec(fd.src));
         plat.algm.verify(fd.src.0, fd.src.1, fd.m, fd.mac);
+    }
+
+    #[test]
+    fn report_test() {
+        let mut rng = OsRng {};
+        let plat = Platform::new(&mut rng);
+        let (mut u1, mut u2) = User::new(&mut rng, &plat);
+        let pd = u1.author(&mut rng, &plat, b"test");
+        let (msg, fd) = u2.receive(pd, &plat, &mut rng);
+        
+        let rep = u2.report(fd, &mut rng, &plat);
+        let uid = plat.validate_report(b"test", rep);
+        assert_eq!(uid, u1.userid);
     }
 
 }
