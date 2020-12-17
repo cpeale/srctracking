@@ -732,6 +732,6 @@ fn scheme_2(c: &mut Criterion) {
     //receiving time (user)
 }
 
-//criterion_group!(benches, scheme_1, scheme_2);
-criterion_group!(benches, scheme_2);
+criterion_group!(benches, scheme_1, scheme_2);
+//criterion_group!(benches, scheme_2);
 criterion_main!(benches);
