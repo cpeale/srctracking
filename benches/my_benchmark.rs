@@ -2,6 +2,9 @@ use double_ratchet_imp::traceback::*;
 use double_ratchet_imp::d_ratchet::*;
 use rand_os::OsRng;
 use rand_core::RngCore;
+use rand::rngs::OsRng as OtherRng;
+
+use double_ratchet_imp::scheme_2::{Platform as S2Plat, User as S2User};
 
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
 
@@ -467,6 +470,81 @@ fn scheme_1(c: &mut Criterion) {
 
 fn scheme_2(c: &mut Criterion) {
     let sizes = [10, 100, 200, 500, 800, 1000, 2000, 5000, 8000];
+
+    let mut group = c.benchmark_group("send only");
+    for size in sizes.iter() {
+        //group.throughput(Throughput::Bytes(*size as u64));
+        group.bench_with_input(BenchmarkId::new("author with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                /*let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, _fd) = bob.receive((sig, src, e), &plat);
+                (bob, plaintext1, rng)*/
+
+                let mut rng = OtherRng {};
+                let mut rng2 = OsRng::new().unwrap();
+                let mut plaintext1 = vec![0; size];
+                rng2.fill_bytes(&mut plaintext1);
+
+                let plat = S2Plat::new(&mut rng);
+                let (mut u1, mut u2) = S2User::new(&mut rng, &plat);
+                let pd = u1.author(&mut rng, &plat, b"test");
+                u2.receive(pd, &plat, &mut rng);
+                (u2, plaintext1, rng, plat)
+            }
+            , 
+            |(mut u2, plaintext1, mut rng, plat)| {
+            let _pd = u2.author(&mut rng, &plat, &plaintext1);
+            },
+            BatchSize::SmallInput
+        );
+        });
+
+        /*group.bench_with_input(BenchmarkId::new("forward with traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (comm, e) = alice.author(&plaintext1, &mut rng);
+                let (sig, src) = plat.process_send(&alice.userid, &comm);
+                let (_, fd) = bob.receive((sig, src, e), &plat);
+                (fd, bob, plaintext1, rng)
+            }
+            , 
+            |(fd, mut bob, plaintext1, mut rng)| {
+            let (_comm, _e) = bob.fwd(&plaintext1, fd, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });*/
+
+        group.bench_with_input(BenchmarkId::new("no traceback", size), size, |b, &size| {
+            b.iter_batched(|| {
+                //setup
+                let mut rng = OsRng::new().unwrap();
+                let (mut alice, mut bob) = User::new(&mut rng);
+                let mut plaintext1 = vec![0; size];
+                rng.fill_bytes(&mut plaintext1);
+                let (h, ct) = bob.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+                alice.msg_scheme.ratchet_decrypt(&h, &ct, AD).unwrap();
+                (alice, plaintext1, rng)
+            }
+            , 
+            |(mut alice, plaintext1, mut rng)| {
+                let (_h, _ct) = alice.msg_scheme.ratchet_encrypt(&plaintext1, AD, &mut rng);
+            },
+            BatchSize::SmallInput
+        );
+        });
+    }
+    group.finish();
 }
 
 //criterion_group!(benches, scheme_1, scheme_2);

@@ -556,10 +556,10 @@ impl User {
         };
 
         if ma == plat.bot {
-            println!("Got a forward");
+            //println!("Got a forward");
             //let pf = self.receive_forward_proof()
         } else {
-            println!("Got an authored message");
+            //println!("Got an authored message");
             self.receive_author_proof(&mut rng, plat, data);
         }
 
