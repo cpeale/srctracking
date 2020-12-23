@@ -966,7 +966,7 @@ fn scheme_2_revised(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, scheme_2_revised);
+criterion_group!(benches, scheme_1, scheme_2_revised);
 //criterion_group!(benches, scheme_1, scheme_2);
 //criterion_group!(benches, scheme_2);
 criterion_main!(benches);
