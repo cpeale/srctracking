@@ -109,18 +109,6 @@ define_proof! {
     V = (w * Gw + x0 * U + x1 * Ut + y1 * E1 + y2 * E2 + y3 * M)
 }
 
-/*define_proof! {
-    blind_issue,
-    "Proof for blind issuance of mac",
-    (w, wp, x0, x1, y1, y2, y3, r),
-    (S1, S2, A1, A2, B1, B2, C1, C2, U, Ut, H),
-    (Cw, Gw, Gwp, GvOverI, Gx0, Gx1, Gy1, Gy2, Gy3, G):
-    Cw = (w * Gw + wp * Gwp),
-    GvOverI = (x0 * Gx0 + x1 * Gx1 + y1 * Gy1 + y2 * Gy2 + y3 * Gy3),
-    S1 = (y1 * A1 + y2 * B1 + y3 * C1 + r * G),
-    S2 = (y1 * A2 + y2 * B2 + y3 * C2 + r * H + w * Gw + x0 * U + x1 * Ut)
-}*/
-
 define_proof! {
     blind_issue,
     "Proof for blind issuance of mac",
@@ -810,7 +798,7 @@ mod tests {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
 
-        let (comms, blindings, _) = prover.prove_impl();
+        let (_comms, blindings, _) = prover.prove_impl();
         let (new_resp, challenge) = prover.recompute_responses(proof.0, blindings);
 
         let mut transcript = Transcript::new(b"receive test");
@@ -978,7 +966,7 @@ mod tests {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
 
-        let (sub_challenge, resp2, commitments) = prover.sim_impl(&mut rng);
+        let (sub_challenge, resp2, _commitments) = prover.sim_impl(&mut rng);
         let (resp1, challenge) = prover.finish_up(sub_challenge, proof.1, proof.2);
 
         let first_chall = challenge - sub_challenge;

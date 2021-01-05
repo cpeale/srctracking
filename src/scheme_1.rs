@@ -15,7 +15,7 @@ use std::vec::Vec;
 
 use crate::d_ratchet::*;
 
-const FD_BOT: &[u8] = &[0; 352]; //signature size + tag size () + comm size (32) + rnd size (32) //TODO: Make the right length
+const FD_BOT: &[u8] = &[0; 352]; //signature size + tag size () + comm size (32) + rnd size (32) 
 const FD_BOT_ED: &[u8] =
     &[0; COMM_SIZE + RAND_SIZE + SRC_SIZE + ed25519_dalek::ed25519::SIGNATURE_LENGTH];
 const FD_SIZE: usize = 352;
@@ -27,7 +27,7 @@ const ID_SIZE: usize = 8;
 
 pub fn make_comm<R: CryptoRng + RngCore>(msg: &[u8], rng: &mut R) -> (Vec<u8>, Vec<u8>) {
     let mut hasher = Sha256::new();
-    let mut rnd = vec![0; 32]; //TODO: Should this be 32 or 64?\
+    let mut rnd = vec![0; 32]; 
     rng.fill_bytes(&mut rnd);
     hasher.input(msg);
     hasher.input(&rnd);
@@ -184,9 +184,9 @@ pub struct User {
 
 impl User {
     pub fn new<R: CryptoRng + RngCore>(rng: &mut R) -> (User, User) {
-        let mut rnd = vec![0; ID_SIZE]; //TODO: Length?
+        let mut rnd = vec![0; ID_SIZE]; 
         rng.fill_bytes(&mut rnd);
-        let mut rnd2 = vec![0; ID_SIZE]; //TODO: Length?
+        let mut rnd2 = vec![0; ID_SIZE];
         rng.fill_bytes(&mut rnd2);
 
         let (user1, user2) = pair_setup();
@@ -206,9 +206,9 @@ impl User {
     }
 
     pub fn new_ed<R: CryptoRng + RngCore>(rng: &mut R, pk: Pk) -> (User, User) {
-        let mut rnd = vec![0; ID_SIZE]; //TODO: Length?
+        let mut rnd = vec![0; ID_SIZE]; 
         rng.fill_bytes(&mut rnd);
-        let mut rnd2 = vec![0; ID_SIZE]; //TODO: Length?
+        let mut rnd2 = vec![0; ID_SIZE];
         rng.fill_bytes(&mut rnd2);
 
         let (user1, user2) = pair_setup();
@@ -241,7 +241,6 @@ impl User {
         plaintext: &[u8],
         rng: &mut R,
     ) -> (Vec<u8>, (Header<PublicKey>, Vec<u8>)) {
-        //println!("{:?}",plaintext.to_vec());
 
         let (rnd, hash) = make_comm(plaintext, rng);
         //make message:
@@ -256,7 +255,6 @@ impl User {
         plaintext: &[u8],
         rng: &mut R,
     ) -> (Vec<u8>, (Header<PublicKey>, Vec<u8>)) {
-        //println!("{:?}",plaintext.to_vec());
 
         let (rnd, hash) = make_comm(plaintext, rng);
         //make message:
@@ -587,5 +585,35 @@ mod tests {
             String::from_utf8(msg.to_vec()).expect("Found invalid UTF-8")
         );
         println!("Source user: {:?}, Send time: {}", id, timestamp_str);
+    }
+
+    #[test]
+    fn lengths() {
+        let mut rng = OsRng::new().unwrap();
+
+
+        let mut plaintext = vec![0; 1000];
+        rng.fill_bytes(&mut plaintext);
+
+        println!("lengths for 100 byte message.");
+
+        let plat = Platform::new();
+        let (mut alice, mut bob) = User::new_ed(&mut rng, plat.ed_sigkeys.public);
+        //author message, from user
+        let (comm, e) = alice.author_ed(&plaintext, &mut rng);
+        println!("sending length is comm: {:?} + ciphertext: {:?} + header: 40", comm.len(), e.1.len());
+
+        let (comm, e) = alice.author_ed(&plaintext, &mut rng);
+        //process message, from platform
+        let (sig, src) = plat.process_send_ed(&alice.userid, &comm);
+        println!("receiving length is sig: {:?} + src: {:?} + ciphertext: {:?} + header: 40", sig.len(), src.len(), e.1.len());
+        
+        //receive message
+        let (_msg, fd) = bob.receive_ed((sig, src, e));
+        println!("reporting length is message (1000) + fd: {:?}", fd.len());
+
+        //ciphertext alone
+        let e = alice.msg_scheme.ratchet_encrypt(&plaintext, AD, &mut rng);
+        println!("normal ratchet length is {:?} + header : 40", e.1.len());
     }
 }

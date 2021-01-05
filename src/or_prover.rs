@@ -11,7 +11,7 @@ use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::MultiscalarMul;
 
 use zkp::toolbox::{SchnorrCS, TranscriptProtocol};
-use zkp::{BatchableProof, CompactProof, Transcript};
+use zkp::{Transcript};
 
 pub struct OrProof {
         /// The Overall Fiat-Shamir challenge.
@@ -24,21 +24,7 @@ pub struct OrProof {
         pub responses2: Vec<Scalar>,
 }
 
-/// Used to create proofs.
-///
-/// To use a [`OrProver`], first construct one using [`OrProver::new()`],
-/// supplying a domain separation label, as well as the transcript to
-/// operate on.
-///
-/// Then, allocate and assign secret ([`OrProver::allocate_scalar`]) and
-/// public ([`OrProver::allocate_point`]) variables, and use those
-/// variables to define the proof statements.
-///
-/// Finally, use [`OrProver::prove_compact`] or
-/// [`OrProver::prove_batchable`] to consume the prover and produce a
-/// proof
 pub struct OrProver<'a> {
-    //transcript: &'a mut Transcript,
     transcript: &'a mut Transcript,
     scalars: Vec<Scalar>,
     points: Vec<RistrettoPoint>,
@@ -90,7 +76,6 @@ impl<'a> OrProver<'a> {
         (PointVar(self.points.len() - 1), compressed)
     }
 
-    /// The compact and batchable proofs differ only by which data they store.
     pub fn prove_impl(&mut self) -> (Vec<CompressedRistretto>, Vec<Scalar>, Vec<Scalar>) {
         // Construct a TranscriptRng
         let mut rng_builder = self.transcript.build_rng();
@@ -120,11 +105,10 @@ impl<'a> OrProver<'a> {
             commitments.push(encoding);
         }
 
-        // Obtain a scalar challenge and compute responses
-        //let challenge = self.transcript.get_challenge(b"chal");
         (commitments, blindings, self.scalars.to_vec())
     }
 
+    //compute the unsimulated proof responses
     pub fn recompute_responses(&mut self, subchallenge: Scalar, blindings: Vec<Scalar>) -> (Vec<Scalar>, Scalar) {
         let challenge = self.transcript.get_challenge(b"chal");
         let second_chall = challenge - subchallenge;
@@ -133,6 +117,7 @@ impl<'a> OrProver<'a> {
             .collect::<Vec<Scalar>>(), challenge)
     }
 
+    //compute the unsimulated proof responses
     pub fn finish_up(&mut self, subchallenge: Scalar, blindings: Vec<Scalar>, scalars: Vec<Scalar>) -> (Vec<Scalar>, Scalar) {
         let challenge = self.transcript.get_challenge(b"chal");
         let second_chall = challenge - subchallenge;
@@ -141,7 +126,6 @@ impl<'a> OrProver<'a> {
             .collect::<Vec<Scalar>>(), challenge)
     }
 
-    /// The compact and batchable proofs differ only by which data they store.
     pub fn sim_impl(&mut self, mut rng: &mut OsRng) -> (Scalar, Vec<Scalar>, Vec<CompressedRistretto>) {
         // Generate a random response for each secret variable
         let responses = self
@@ -175,7 +159,6 @@ impl<'a> OrProver<'a> {
             commitments.push(encoding);
         }
 
-        //(challenge, responses, commitments)
         (challenge, responses, commitments)
     }
 
@@ -205,11 +188,7 @@ mod tests {
     use rand::rngs::OsRng;
 
     use crate::or_prover::OrProver;
-    use zkp::toolbox::{
-        //batch_verifier::BatchVerifier, prover::Prover,
-        verifier::Verifier,
-        SchnorrCS,
-    };
+    use zkp::toolbox::SchnorrCS;
     use zkp::Transcript;
 
     fn dleq_statement<CS: SchnorrCS>(
@@ -232,7 +211,7 @@ mod tests {
 
         let mut transcript = Transcript::new(b"DLEQTest");
 
-        let (proof, cmpr_A, cmpr_G) = {
+        let (proof, _cmpr_A, _cmpr_G) = {
             let x = Scalar::from(89327492234u64);
 
             let A = B * x;
@@ -240,7 +219,6 @@ mod tests {
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -252,7 +230,7 @@ mod tests {
             (prover.sim_impl(&mut rng), cmpr_A, cmpr_G)
         };
 
-        let (challenge, comms, resps, cmpr_A2, cmpr_G2) = {
+        let (_challenge, _comms, _resps, _cmpr_A2, _cmpr_G2) = {
             let x = Scalar::from(89327492234u64);
 
             let A = B * x;
@@ -260,7 +238,6 @@ mod tests {
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -269,7 +246,7 @@ mod tests {
 
             dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
 
-            let (commitments, blindings, scalars) = prover.prove_impl();
+            let (commitments, blindings, _scalars) = prover.prove_impl();
             let (new_resp, challenge) = prover.recompute_responses(proof.0, blindings.to_vec());
 
             (challenge, commitments, new_resp, cmpr_A, cmpr_G)

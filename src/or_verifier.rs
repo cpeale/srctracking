@@ -2,33 +2,13 @@
  * Modified Verifier from dalek-cryptography/zkp that can do a single OR of two statements
  */
 #![allow(non_snake_case)]
-
-use rand::{thread_rng, Rng};
 use std::iter;
-
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::{IsIdentity, VartimeMultiscalarMul};
-
 use zkp::toolbox::{SchnorrCS, TranscriptProtocol};
-use zkp::{BatchableProof, CompactProof, ProofError, Transcript};
+use zkp::{ProofError, Transcript};
 use curve25519_dalek::traits::MultiscalarMul;
 
-/// Used to produce verification results.
-///
-/// To use a [`Verifier`], first construct one using [`Verifier::new()`],
-/// supplying a domain separation label, as well as the transcript to
-/// operate on.
-///
-/// Then, allocate secret ([`Verifier::allocate_scalar`]) variables
-/// and allocate and assign public ([`Verifier::allocate_point`])
-/// variables, and use those variables to define the proof statements.
-/// Note that no assignments to secret variables are assigned, since
-/// the verifier doesn't know the secrets.
-///
-/// Finally, use [`Verifier::verify_compact`] or
-/// [`Verifier::verify_batchable`] to consume the verifier and produce
-/// a verification result.
 pub struct OrVerifier<'a> {
     transcript: &'a mut Transcript,
     num_scalars: usize,
@@ -84,9 +64,6 @@ impl<'a> OrVerifier<'a> {
 
     pub fn add_comms(&mut self, challenge: Scalar, responses: Vec<Scalar>) {
         // Check that there are as many responses as secret variables
-        //if responses.len() != self.num_scalars {
-         //   return Err(ProofError::VerificationFailure);
-        //}
         assert_eq!(responses.len(), self.num_scalars);
 
         // Decompress all parameters or fail verification.
@@ -146,11 +123,7 @@ mod tests {
     use rand::rngs::OsRng;
 
     use crate::or_prover::OrProver;
-    use zkp::toolbox::{
-        //batch_verifier::BatchVerifier, prover::Prover,
-        verifier::Verifier,
-        SchnorrCS,
-    };
+    use zkp::toolbox::SchnorrCS;
     use zkp::Transcript;
     use super::*;
 
@@ -178,11 +151,10 @@ mod tests {
             let x = Scalar::from(89327492234u64);
 
             let A = B; //wrong assignments for A and G
-            let G = H;
+            let G = H; //to test when first statement is incorrect in an OR
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -194,7 +166,7 @@ mod tests {
             (prover.sim_impl(&mut rng), cmpr_A, cmpr_G)
         };
 
-        let (challenge, comms, resps, cmpr_A2, cmpr_G2) = {
+        let (challenge, _comms, resps, cmpr_A2, cmpr_G2) = {
             let x = Scalar::from(89327492234u64);
 
             let A = B * x;
@@ -202,7 +174,6 @@ mod tests {
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -260,7 +231,6 @@ mod tests {
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -276,11 +246,10 @@ mod tests {
             let x = Scalar::from(89327492234u64);
 
             let A = B; //wrong assignments for A and G
-            let G = H;
+            let G = H; //testing when second statement in OR is incorrect
 
             let mut prover = OrProver::new(b"DLEQProof", &mut transcript);
 
-            // XXX committing var names to transcript forces ordering (?)
             let var_x = prover.allocate_scalar(b"x", x);
             let (var_B, _) = prover.allocate_point(b"B", B);
             let (var_H, _) = prover.allocate_point(b"H", H);
@@ -289,7 +258,7 @@ mod tests {
 
             dleq_statement(&mut prover, var_x, var_A, var_G, var_B, var_H);
 
-            let (challenge, resp2, commitments) = prover.sim_impl(&mut rng);
+            let (challenge, resp2, _commitments) = prover.sim_impl(&mut rng);
             let (resp1, overall_chall) = prover.finish_up(challenge, proof.1, proof.2);
             (overall_chall, challenge, resp1, resp2, cmpr_A, cmpr_G)
         };

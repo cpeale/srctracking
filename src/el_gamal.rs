@@ -2,7 +2,6 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::constants;
 use rand::rngs::OsRng;
-use rand_core::{CryptoRng, RngCore};
 
 pub struct ElGamal {
     pub pk: RistrettoPoint,
@@ -64,7 +63,7 @@ mod tests {
 
         let ct = eg.enc(&mut rng, m);
 
-        let (ct2, r) = eg.rerand(&mut rng, ct);
+        let (ct2, _r) = eg.rerand(&mut rng, ct);
         
         let pt = eg.dec(ct);
         let pt2 = eg.dec(ct2);

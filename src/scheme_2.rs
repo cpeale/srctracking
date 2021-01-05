@@ -9,7 +9,7 @@ use curve25519_dalek::scalar::Scalar;
 use double_ratchet::Header;
 use rand::rngs::OsRng;
 use rand_os::OsRng as OtherRng;
-use sha2::{Digest, Sha512};
+use sha2::Sha512;
 use zkp::Transcript;
 use std::convert::TryInto;
 use crate::or_prover::OrProver;
@@ -198,8 +198,7 @@ impl Platform {
         attributes: ((RistrettoPoint, RistrettoPoint), (RistrettoPoint, RistrettoPoint), (RistrettoPoint, RistrettoPoint)),
     ) -> ( Vec<u8>, (Scalar, RistrettoPoint, (RistrettoPoint, RistrettoPoint))) {
         let (a, b, c) = attributes;
-        let ((t, U, ct), r) = self.algm.blind_issue(&mut rng, H, b, c, a); //TODO: Fix blind issue to be the correct order
-
+        let ((t, U, ct), r) = self.algm.blind_issue(&mut rng, H, b, c, a); 
         let Ut = U * t;
         let Gv_over_I = self.algm.params[G_V] - self.algm.i;
 
@@ -482,7 +481,7 @@ impl User {
         //encrypt openings
         let o_a = vec![m.to_bytes(), z.to_bytes()].concat();
         let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); 
-        let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); //todo: how to get rid of this other rng?
+        let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng);
 
         //pass to plat
         let pf = (out.proof, out.info);
@@ -503,7 +502,17 @@ impl User {
     pub fn author_user_only( &mut self,
         mut rng: &mut OsRng,
         plat: &Platform,
-        plaintext: &[u8]) {
+        plaintext: &[u8]) -> (
+            Vec<u8>,
+            (
+                CompressedRistretto,
+                CompressedRistretto,
+                CompressedRistretto,
+                CompressedRistretto,
+                CompressedRistretto,
+                CompressedRistretto,
+            ),
+        ) {
 
         //construct proof
         let out = self.present(&mut rng, plat, None);
@@ -513,15 +522,15 @@ impl User {
         let m = Scalar::hash_from_bytes::<Sha512>(plaintext);
         let M = plat.algm.params[G_M] * m;
         let Ca = plat.algm.params[G_Y3] * z + M;
-        let cmpCa = Ca.compress();
+        let _cmpCa = Ca.compress();
 
         //encrypt openings
         let o_a = vec![m.to_bytes(), z.to_bytes()].concat();
         let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); 
-        let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); //todo: how to get rid of this other rng?
+        let _e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); 
 
         //pass to plat
-        let pf = (out.proof, out.info);
+        (out.proof, out.info)
     }
 
     pub fn forward(&mut self,
@@ -543,7 +552,7 @@ impl User {
         //encrypt openings
         let o_a = vec![plat.bot.to_bytes(), z.to_bytes()].concat();
         let msg = vec![o_a, out.o_f, plaintext.to_vec()].concat(); 
-        let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng); //todo: how to get rid of this other rng?
+        let e = self.msg_scheme.ratchet_encrypt(&msg, AD, &mut self.rng);
 
         //pass to plat
         let pf = (out.proof, out.info);
@@ -617,7 +626,6 @@ impl User {
         let rec_eg = ElGamal::new(&mut rng);
 
         let Ma = plat.algm.params[G_M] * data.ma;
-        let Mf = plat.algm.params[G_M] * data.mf;
 
         let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srca);
 
@@ -697,7 +705,7 @@ impl User {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
 
-        let (sub_challenge, resp2, commitments) = prover.sim_impl(&mut rng);
+        let (sub_challenge, resp2, _commitments) = prover.sim_impl(&mut rng);
         let (resp1, challenge) = prover.finish_up(sub_challenge, proof.1, proof.2);
 
         let first_chall = challenge - sub_challenge;
@@ -732,7 +740,6 @@ impl User {
     fn receive_forward_proof(&self, mut rng: &mut OsRng, plat: &Platform, data: ProofData) -> FD {
         let rec_eg = ElGamal::new(&mut rng);
 
-        let Ma = plat.algm.params[G_M] * data.ma;
         let Mf = plat.algm.params[G_M] * data.mf;
 
         let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srcf);
@@ -813,7 +820,7 @@ impl User {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
 
-            let (comms, blindings, _) = prover.prove_impl();
+            let (_comms, blindings, _) = prover.prove_impl();
             let (new_resp, challenge) = prover.recompute_responses(proof.0, blindings);
 
         let pf = OrProof {
@@ -893,7 +900,6 @@ impl User {
         let rec_eg = ElGamal::new(&mut rng);
 
         let Ma = plat.algm.params[G_M] * data.ma;
-        let Mf = plat.algm.params[G_M] * data.mf;
 
         let (rand_src, rnd) = plat.eg.rerand(&mut rng, data.srca);
 
@@ -973,7 +979,7 @@ impl User {
             var_A1, var_A2, var_B1, var_B2_over_Ce1, var_C1, var_C2_over_Ce2, 
             var_neg_Gy1, var_neg_Gy2);
 
-        let (sub_challenge, resp2, commitments) = prover.sim_impl(&mut rng);
+        let (sub_challenge, resp2, _commitments) = prover.sim_impl(&mut rng);
         let (resp1, challenge) = prover.finish_up(sub_challenge, proof.1, proof.2);
 
         let first_chall = challenge - sub_challenge;
@@ -1084,6 +1090,7 @@ mod tests {
     use super::*;
     use rand::rngs::OsRng;
     use rand_os::OsRng as OtherRng;
+    use rand_core::RngCore;
 
     #[test]
     fn scalar_test() {
@@ -1122,7 +1129,7 @@ mod tests {
     fn author_test() {
         let mut rng = OsRng {};
         let plat = Platform::new(&mut rng);
-        let (mut u1, mut u2) = User::new(&mut rng, &plat);
+        let (mut u1, _u2) = User::new(&mut rng, &plat);
         u1.author(&mut rng, &plat, b"test");
         u1.author(&mut rng, &plat, b"another test");
     }
@@ -1131,7 +1138,7 @@ mod tests {
     fn forward_test() {
         let mut rng = OsRng {};
         let plat = Platform::new(&mut rng);
-        let (mut u1, mut u2) = User::new(&mut rng, &plat);
+        let (mut u1, u2) = User::new(&mut rng, &plat);
         u1.forward(&mut rng, &plat, b"test", u2.ad);
     }
 
@@ -1176,11 +1183,45 @@ mod tests {
         let plat = Platform::new(&mut rng);
         let (mut u1, mut u2) = User::new(&mut rng, &plat);
         let pd = u1.author(&mut rng, &plat, b"test");
-        let (msg, fd) = u2.receive(pd, &plat, &mut rng);
+        let (_msg, fd) = u2.receive(pd, &plat, &mut rng);
         
         let rep = u2.report(fd, &mut rng, &plat);
         let uid = plat.validate_report(b"test", rep);
         assert_eq!(uid, u1.userid);
+    }
+
+    #[test]
+    fn lengths_s2 () {
+        let mut rng = OtherRng::new().unwrap();
+        let mut plaintext = vec![0; 1000];
+        rng.fill_bytes(&mut plaintext);
+
+        println!("lengths for 1000 byte message.");
+
+        let mut rng = OsRng {};
+        let plat = Platform::new(&mut rng);
+        let (mut u1, mut u2) = User::new(&mut rng, &plat);
+
+        let pf = u1.author_user_only(&mut rng, &plat, &plaintext);
+        println!("sending length: Cf: 96 + pf_info: 192 + pf: {:?} + header: 40 + ciphertext: (see below)", pf.0.len());
+
+        let pd = u1.author(&mut rng, &plat, &plaintext);
+        println!("receiving length (first exchange, plat->user): Ca: 32 + src: 64 + Cf: 96 + header: 40 + ciphertext: {:?}", pd.e.1.len());
+        
+        let pd = u1.author(&mut rng, &plat, &plaintext);
+        let pf = u2.receive_send_only(pd, &plat, &mut rng); 
+        println!("receiving length (second exchange, user->plat): pf: {:?}, H: 32, attr: 192", pf.0.len());
+        let pd = u1.author(&mut rng, &plat, &plaintext);
+        let pf = u2.receive_send_only(pd, &plat, &mut rng); 
+        let cert = plat.issue_cert(&mut rng, pf.1.decompress().unwrap() , ((pf.2.0.0.decompress().unwrap(), pf.2.0.1.decompress().unwrap()), (pf.2.1.0.decompress().unwrap(), pf.2.1.1.decompress().unwrap()), (pf.2.2.0.decompress().unwrap(), pf.2.2.1.decompress().unwrap())));
+        println!("receiving length (last exchange, plat->user): proof: {:?}, encrypted MAC: 128", cert.0.len());
+
+        let pd = u1.author(&mut rng, &plat, &plaintext);
+        let (_msg, fd) = u2.receive(pd, &plat, &mut rng);
+        let rep = u2.report(fd, &mut rng, &plat);
+
+        println!("reporting length: message: 1000 + proof: {:?} + info: 192 + Cf: 96 + o_f: {:?}", rep.proof.len(), rep.o_f.len());
+       
     }
 
 }

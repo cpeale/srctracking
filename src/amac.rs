@@ -9,7 +9,6 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 use curve25519_dalek::scalar::Scalar;
 use rand::rngs::OsRng;
 
-//For now: UIDs are ec points, can add attribute for metadata later
 
 pub struct AMAC {
     //public group params

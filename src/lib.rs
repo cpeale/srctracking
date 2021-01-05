@@ -7,7 +7,7 @@ pub extern crate serde_derive;
 extern crate zkp;
 
 pub mod d_ratchet;
-pub mod traceback;
+pub mod scheme_1;
 pub mod amac;
 pub mod proofs;
 pub mod scheme_2;
